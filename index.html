@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rural India Production Chain Management System — v3.3 (Minimal Export Change)</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',Tahoma,Verdana,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}
+    .container{max-width:1400px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.1);overflow:hidden}
+    .header{background:linear-gradient(135deg,#2c3e50,#3498db);color:#fff;padding:2rem;text-align:center}
+    .header h1{font-size:2.2rem;margin-bottom:.25rem}
+    .main-content{display:grid;grid-template-columns:1fr 2fr;min-height:80vh}
+    .sidebar{background:#f8f9fa;padding:2rem;border-right:1px solid #e9ecef}
+    .content-area{padding:2rem}
+    .section{background:#fff;border-radius:12px;padding:1.1rem;margin-bottom:1.1rem;box-shadow:0 4px 15px rgba(0,0,0,.05);border:1px solid #e9ecef}
+    .section h3{color:#2c3e50;margin-bottom:.6rem;font-size:1.15rem}
+    .form-group{margin-bottom:.8rem}
+    .form-group label{display:block;margin-bottom:.45rem;font-weight:600;color:#495057}
+    .form-group input,.form-group textarea,.form-group select{width:100%;padding:.6rem;border:2px solid #e9ecef;border-radius:8px;font-size:1rem}
+    .btn{background:linear-gradient(135deg,#3498db,#2980b9);color:#fff;border:none;padding:.55rem 1.1rem;border-radius:8px;cursor:pointer;font-weight:600}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 5px 15px rgba(52,152,219,.25)}
+    .btn-success{background:linear-gradient(135deg,#27ae60,#229954)}
+    .btn-warning{background:linear-gradient(135deg,#f39c12,#e67e22)}
+    .btn-danger{background:linear-gradient(135deg,#e74c3c,#c0392b)}
+    .btn-small{padding:.45rem .9rem;font-size:.9rem}
+    .btn-group{display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap}
+    .chip-container{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem}
+    .chip{background:#3498db;color:#fff;padding:.25rem .7rem;border-radius:16px;font-size:.85rem;display:flex;align-items:center;gap:.5rem}
+    .chip-remove{background:none;border:none;color:#fff;cursor:pointer;font-size:1rem;line-height:1}
+    .results-container{background:#f8f9fa;border-radius:12px;padding:1rem;margin-top:1rem}
+    .result-section{margin-bottom:1.1rem}
+    .result-section h4{color:#2c3e50;margin-bottom:.55rem;font-size:1.05rem;border-left:4px solid #3498db;padding-left:.6rem}
+    .result-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem}
+    .result-card{background:#fff;padding:.85rem;border-radius:8px;border:1px solid #e9ecef}
+    .chain-visualization{background:#fff;border-radius:12px;padding:1rem;margin-top:1rem}
+    .chain-step{display:flex;align-items:center;margin-bottom:1rem;padding:.6rem;background:#f8f9fa;border-radius:8px;border-left:4px solid #3498db;flex-wrap:wrap}
+    .chain-arrow{font-size:1.5rem;color:#3498db;margin:0 .6rem}
+    .chain-item{flex:1;min-width:150px;text-align:center;padding:.6rem;background:#fff;border-radius:8px;border:2px solid #e9ecef;margin:.2rem}
+    .data-table{width:100%;border-collapse:collapse;margin-top:.4rem}
+    .data-table th,.data-table td{padding:.6rem;text-align:left;border-bottom:1px solid #e9ecef}
+    .tabs{display:flex;border-bottom:2px solid #e9ecef;margin-bottom:1rem;flex-wrap:wrap}
+    .tab{padding:.8rem 1.4rem;cursor:pointer;border:none;background:none;font-weight:600;color:#6c757d;border-bottom:3px solid transparent}
+    .tab.active{color:#3498db;border-bottom-color:#3498db}
+    .tab-content{display:none}
+    .tab-content.active{display:block}
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem}
+    .stat-card{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:1rem;border-radius:12px;text-align:center}
+    .stat-number{font-size:1.6rem;font-weight:700}
+    .flow-diagram{background:#fff;border-radius:12px;padding:1rem;margin-top:1rem;min-height:240px}
+    .flow-node{display:inline-block;background:#3498db;color:#fff;padding:.4rem .8rem;border-radius:8px;margin:.2rem;font-size:.85rem}
+    .flow-level{text-align:center;margin:.6rem 0}
+    .flow-connector{text-align:center;color:#3498db;font-size:1.2rem;margin:.25rem 0}
+    .success-message{background:#d4edda;color:#155724;padding:.6rem;border-radius:8px;border:1px solid #c3e6cb;margin-bottom:.6rem}
+    .error-message{background:#f8d7da;color:#721c24;padding:.6rem;border-radius:8px;border:1px solid #f5c6cb;margin-bottom:.6rem}
+    .data-persistence{background:#fff3cd;border:1px solid #ffeaa7;color:#856404;padding:.6rem;border-radius:8px;margin-bottom:.6rem}
+    .hidden{display:none}
+    details summary{cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Rural India Production Chain Management System</h1>
+      <p>Model agricultural and rural processing relationships to discover production possibilities</p>
+    </div>
+
+    <div class="main-content">
+      <div class="sidebar">
+        <div class="section">
+          <h3>System Statistics</h3>
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-number" id="processors-count">0</div><div>Processors</div></div>
+            <div class="stat-card"><div class="stat-number" id="chains-count">0</div><div>Production Chains</div></div>
+            <div class="stat-card"><div class="stat-number" id="inputs-count">0</div><div>Unique Inputs</div></div>
+            <div class="stat-card"><div class="stat-number" id="outputs-count">0</div><div>Unique Outputs</div></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Add New Processor</h3>
+          <div class="form-group"><label>Processor Name</label><input id="processor-name" placeholder="e.g., Rice Mill, Oil Expeller" /></div>
+          <div class="form-group"><label>Inputs (comma-separated)</label><textarea id="processor-inputs" rows="3" placeholder="e.g., Paddy, Electricity, Water"></textarea></div>
+          <div class="form-group"><label>Outputs (comma-separated)</label><textarea id="processor-outputs" rows="3" placeholder="e.g., Rice, Rice Bran, Rice Husk"></textarea></div>
+          <div class="form-group"><label>Processing Time (optional)</label><input id="processing-time" placeholder="e.g., 2-4 hours, Seasonal" /></div>
+          <div class="form-group"><label>Description (optional)</label><textarea id="processor-description" rows="2" placeholder="Brief description"></textarea></div>
+          <button class="btn btn-success" onclick="addProcessor()">Add Processor</button>
+        </div>
+
+        <div class="section">
+          <h3>Quick Discovery</h3>
+          <div class="form-group"><label>Available Inputs</label><input id="quick-inputs" placeholder="e.g., Paddy, Sugarcane" /></div>
+          <button class="btn btn-warning" onclick="quickDiscover()">Discover Possibilities</button>
+        </div>
+
+        <div class="section">
+          <h3>Supabase Config</h3>
+          <div class="data-persistence" style="background:#eef8f2;border-color:#b7e1c0;color:#155724">
+            Set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> in the script config below. Use the anon key only.
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Data Management</h3>
+          <div class="data-persistence" style="background:#e8f4fd;border-color:#b6dcfe;color:#0c5460">This version loads from <code>data.json</code> in the same GitHub repo. Saving back to GitHub directly from GitHub Pages is not supported safely without a backend or token-based API. Use “Download current data.json” and replace the repo file when you want to publish updates.</div>
+          <div class="btn-group" style="flex-direction:column">
+            <details id="export-json-panel"><summary>Export JSON</summary>
+              <div class="btn-group" style="margin-top:.5rem">
+                <button class="btn btn-small" onclick="buildExportArtifacts()">Generate export</button>
+                <a id="export-download-link" class="btn btn-small" download="rural_production_chain_data.json" href="#" onclick="return !!this.href && this.href !== '#';">Download file</a>
+                <a id="export-open-link" class="btn btn-small" target="_blank" rel="noopener" href="#">Open in new tab</a>
+                <button class="btn btn-small" onclick="copyExportJson()">Copy JSON</button>
+              </div>
+              <textarea id="export-json-text" rows="8" style="width:100%;margin-top:.5rem" readonly placeholder="Click 'Generate export' to populate..."></textarea>
+              <small id="export-status" style="display:block;margin-top:.25rem;color:#6c757d">Not generated yet.</small>
+            </details>
+            <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importData(event)" />
+            <button class="btn btn-small" onclick="document.getElementById('import-file').click()">Import JSON File</button>
+            <details>
+              <summary>Paste JSON to Import</summary>
+              <textarea id="json-import" rows="8" style="width:100%" placeholder='{"processors": ... }'></textarea>
+              <div class="btn-group" style="margin-top:.5rem"><button class="btn btn-small" onclick="importFromTextarea()">Import From Pasted JSON</button></div>
+            </details>
+            <button class="btn btn-small" onclick="downloadRepoDataJson()">Download current data.json</button>
+            <button class="btn btn-danger btn-small" onclick="restoreBaseData()">Restore Base Data</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="content-area">
+        <div class="tabs">
+          <button class="tab active" onclick="showTab('discovery', this)">Discovery Engine</button>
+          <button class="tab" onclick="showTab('processors', this)">All Processors</button>
+          <button class="tab" onclick="showTab('chains', this)">Production Chains</button>
+          <button class="tab" onclick="showTab('flow', this)">Input Flow Visualization</button>
+        </div>
+
+        <div class="tab-content active" id="discovery-tab">
+          <div class="section">
+            <h3>Advanced Discovery Engine</h3>
+            <div class="form-group">
+              <label>Available Inputs</label>
+              <div class="btn-group">
+                <input id="input-search" placeholder="Type input name and press Enter" style="flex:1" />
+                <button class="btn btn-small" onclick="addInputChip()">Add</button>
+              </div>
+              <div class="chip-container" id="input-chips"></div>
+            </div>
+            <div class="btn-group">
+              <button class="btn" onclick="discoverPossibilities()">Discover All Possibilities</button>
+              <button class="btn btn-warning" onclick="findOptimalChain()">Find Optimal Chain</button>
+              <button class="btn btn-danger btn-small" onclick="clearInputs()">Clear All</button>
+            </div>
+            <div id="discovery-results"></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="processors-tab">
+          <div class="section">
+            <h3>All Processors Database</h3>
+            <div class="btn-group">
+              <input id="processor-filter" placeholder="Search processors..." style="flex:1" />
+              <button class="btn btn-small" onclick="filterProcessors()">Filter</button>
+              <button class="btn btn-small" onclick="clearFilter()">Clear</button>
+            </div>
+            <div id="processors-list"></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="chains-tab">
+          <div class="section">
+            <h3>Production Chains Visualization</h3>
+            <div class="form-group"><label>Select Starting Material</label>
+              <select id="chain-start"><option value="">Choose a starting input...</option></select>
+            </div>
+            <div class="btn-group">
+              <button class="btn" onclick="visualizeChain()">Visualize Production Chain</button>
+              <button class="btn btn-warning" onclick="visualizeAllChains()">Show All Possible Chains</button>
+            </div>
+            <div id="chain-visualization"></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="flow-tab">
+          <div class="section">
+            <h3>Input Flow Visualization</h3>
+            <div class="form-group"><label>Select Input Material</label>
+              <select id="flow-input"><option value="">Choose an input...</option></select>
+            </div>
+            <div class="btn-group">
+              <button class="btn" onclick="visualizeInputFlow()">Visualize Flow</button>
+              <button class="btn btn-warning" onclick="visualizeCompleteFlow()">Show Complete Processing Network</button>
+            </div>
+            <div id="flow-visualization"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Helpers =====
+    const esc = (s) => String(s)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/\"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+
+    // ===== Base dataset (used for restore and first load) =====
+    const BASE_PROCESSORS = [
+      ['Rice Mill', ['Paddy','Electricity','Water'], ['Rice','Rice Bran','Broken Rice','Rice Husk'], '2-4 hours', 'Processes harvested paddy into consumable rice'],
+      ['Mustard Oil Mill', ['Mustard Seeds','Firewood'], ['Mustard Oil','Oil Cake'], '3-5 hours', 'Extracts oil from mustard seeds using traditional kolhu'],
+      ['Coconut Oil Mill', ['Coconut','Firewood'], ['Coconut Oil','Coconut Cake','Coconut Shell'], '4-6 hours', 'Traditional oil extraction from coconuts'],
+      ['Sugarcane Crusher', ['Sugarcane','Labor'], ['Sugarcane Juice','Bagasse'], '1-2 hours', 'Extracts juice from sugarcane stalks'],
+      ['Jaggery Making Unit', ['Sugarcane Juice','Firewood'], ['Jaggery','Molasses'], '6-8 hours', 'Boils sugarcane juice to make jaggery'],
+      ['Cotton Ginning Mill', ['Raw Cotton','Electricity'], ['Cotton Fiber','Cotton Seeds'], '2-3 hours', 'Separates cotton fibers from seeds'],
+      ['Groundnut Decorticator', ['Groundnut Pods','Manual Labor'], ['Groundnut Kernels','Groundnut Shells'], '1-2 hours', 'Removes shells from groundnut pods'],
+      ['Turmeric Processing Unit', ['Fresh Turmeric','Steam','Firewood'], ['Turmeric Powder','Turmeric Fingers'], '24-48 hours', 'Boils, dries and grinds turmeric'],
+      ['Chili Processing Unit', ['Red Chilies','Sun','Manual Labor'], ['Chili Powder','Whole Dried Chilies'], '3-7 days', 'Dries and grinds red chilies'],
+      ['Village Flour Mill', ['Wheat','Jowar','Bajra','Electricity'], ['Wheat Flour','Jowar Flour','Bajra Flour','Bran'], '1-2 hours', 'Grinds various grains into flour'],
+      ['Dairy Cooperative', ['Buffalo Milk','Cow Milk','Refrigeration'], ['Butter','Ghee','Paneer','Buttermilk','Curd'], '4-12 hours', 'Processes milk into dairy products'],
+      ['Poultry Farm', ['Chicken Feed','Water','Medicine','Chicks'], ['Eggs','Broiler Chicken','Chicken Manure'], '21 days eggs, 45 days broilers', 'Raises chickens for eggs and meat'],
+      ['Goat Farm', ['Fodder','Water','Medicine','Goat Kids'], ['Goat Milk','Goat Meat','Goat Manure'], 'Daily milk, 6 months meat', 'Raises goats for milk and meat'],
+      ['Fish Farm', ['Fish Seeds','Fish Feed','Water','Lime'], ['Fish','Fish Waste'], '6-12 months', 'Cultivates fish in ponds'],
+      ['Sericulture Unit', ['Mulberry Leaves','Silkworm Eggs','Labor'], ['Silk Cocoons','Silk Yarn'], '25-30 days', 'Rears silkworms for silk production'],
+      ['Bamboo Craft Unit', ['Bamboo','Tools','Skill'], ['Baskets','Mats','Furniture','Handicrafts'], '1-7 days', 'Creates products from bamboo'],
+      ['Pottery Workshop', ['Clay','Water','Firewood','Tools'], ['Earthen Pots','Tiles','Decorative Items'], '2-3 days', 'Makes clay products'],
+      ['Handloom Unit', ['Cotton Yarn','Silk Yarn','Dyes'], ['Khadi Cloth','Silk Sarees','Fabrics'], '1-30 days', 'Weaves textiles on traditional looms'],
+      ['Vermicompost Unit', ['Organic Waste','Earthworms','Water'], ['Vermicompost','Liquid Fertilizer'], '45-60 days', 'Converts organic waste to fertilizer'],
+      ['Biogas Plant', ['Cow Dung','Water','Organic Waste'], ['Biogas','Slurry'], 'Daily gas, 15-20 days slurry', 'Produces gas and fertilizer from organic matter'],
+      ['Beekeeping Unit', ['Bee Colonies','Flowers','Hives'], ['Honey','Beeswax','Royal Jelly'], 'Seasonal', 'Maintains bee colonies for honey production'],
+      ['Tamarind Processing', ['Tamarind Pods','Manual Labor'], ['Tamarind Pulp','Tamarind Seeds','Tamarind Shell'], '2-4 hours', 'Extracts pulp from tamarind pods'],
+      ['Amla Processing', ['Fresh Amla','Salt','Turmeric'], ['Amla Pickle','Amla Juice','Dried Amla'], '7-15 days', 'Processes amla into various products'],
+      ['Mahua Oil Mill', ['Mahua Seeds','Firewood'], ['Mahua Oil','Oil Cake'], '4-6 hours', 'Extracts oil from mahua seeds'],
+      ['Lac Processing Unit', ['Lac Insects','Host Trees'], ['Shellac','Lac Dye'], '6 months', 'Harvests and processes lac from insects'],
+      ['Village Blacksmith', ['Iron','Coal','Tools','Fire'], ['Agricultural Tools','Household Items'], '2-8 hours', 'Forges metal tools and implements'],
+      ['Leather Tanning Unit', ['Raw Hides','Tanning Agents','Water'], ['Tanned Leather','Leather Products'], '7-15 days', 'Processes animal hides into leather'],
+      ['Rope Making Unit', ['Coconut Coir','Hemp','Jute'], ['Ropes','Mats','Brushes'], '2-6 hours', 'Makes ropes from natural fibers'],
+      ['Pickle Making Unit', ['Vegetables','Oil','Spices','Salt'], ['Various Pickles'], '15-30 days', 'Preserves vegetables in oil and spices'],
+      ['Papad Making Unit', ['Lentil Flour','Spices','Water'], ['Papads','Vadiyam'], '1-2 days', 'Makes dried lentil wafers']
+    ];
+
+    // ===== Core System =====
+    class ProductionChainSystem {
+      constructor(){
+        this.processors=new Map();
+        this.inputToProcessors=new Map();
+        this.outputToProcessors=new Map();
+        this.updateStats();
+      }
+      seedBase(){
+        this.processors.clear(); this.inputToProcessors.clear(); this.outputToProcessors.clear();
+        BASE_PROCESSORS.forEach(([n,i,o,t,d])=>{ this.addProcessor(n,i,o,t,d); });
+        this.saveToLocalStorage(); this.updateStats();
+      }
+      addProcessor(name,inputs,outputs,processingTime='',description=''){
+        if(!name||!name.trim()) throw new Error('Processor name is required');
+        if(this.processors.has(name)&&!confirm(`Processor "${name}" already exists. Replace it?`)) return null;
+        const p={name:name.trim(),inputs:inputs.map(i=>i.trim()).filter(Boolean),outputs:outputs.map(o=>o.trim()).filter(Boolean),processingTime:processingTime.trim(),description:description.trim()};
+        if(p.inputs.length===0) throw new Error('At least one input is required');
+        if(p.outputs.length===0) throw new Error('At least one output is required');
+        if(this.processors.has(name)) this.removeProcessor(name,false);
+        this.processors.set(name,p);
+        p.inputs.forEach(i=>{ if(!this.inputToProcessors.has(i)) this.inputToProcessors.set(i,new Set()); this.inputToProcessors.get(i).add(name); });
+        p.outputs.forEach(o=>{ if(!this.outputToProcessors.has(o)) this.outputToProcessors.set(o,new Set()); this.outputToProcessors.get(o).add(name); });
+        this.saveToLocalStorage(); this.updateStats(); return p;
+      }
+      removeProcessor(name,updateUI=true){
+        const p=this.processors.get(name); if(!p) return false;
+        p.inputs.forEach(i=>{ if(this.inputToProcessors.has(i)){ this.inputToProcessors.get(i).delete(name); if(this.inputToProcessors.get(i).size===0) this.inputToProcessors.delete(i);} });
+        p.outputs.forEach(o=>{ if(this.outputToProcessors.has(o)){ this.outputToProcessors.get(o).delete(name); if(this.outputToProcessors.get(o).size===0) this.outputToProcessors.delete(o);} });
+        this.processors.delete(name);
+        if(updateUI){ this.saveToLocalStorage(); this.updateStats(); }
+        return true;
+      }
+      findProcessorsByInputs(availableInputs,allowPartial=true){
+        const res={exactMatches:[],partialMatches:[],possibleOutputs:new Set(),secondaryProcessors:[]};
+        this.processors.forEach((p,name)=>{
+          const req=p.inputs; let cnt=0;
+          req.forEach(r=>{ availableInputs.forEach(av=>{ if(allowPartial){ if(r.toLowerCase().includes(av.toLowerCase())||av.toLowerCase().includes(r.toLowerCase())) cnt++; } else if(r===av) cnt++; }); });
+          if(cnt===req.length&&req.length>0){ res.exactMatches.push({processor:name,data:p}); p.outputs.forEach(o=>res.possibleOutputs.add(o)); }
+          else if(cnt>0){ const missing=req.filter(inp=>!availableInputs.some(av=>allowPartial?(inp.toLowerCase().includes(av.toLowerCase())||av.toLowerCase().includes(inp.toLowerCase())):(inp===av))); res.partialMatches.push({processor:name,data:p,matchCount:cnt,missingInputs:missing}); }
+        });
+        res.possibleOutputs.forEach(o=>{ if(this.inputToProcessors.has(o)){ this.inputToProcessors.get(o).forEach(n=>{ if(!res.exactMatches.some(m=>m.processor===n)){ res.secondaryProcessors.push({processor:n,data:this.processors.get(n),triggerInput:o}); } }); } });
+        return res;
+      }
+      findProductionChain(start,maxDepth=5){
+        const chains=[]; const visited=new Set();
+        const explore=(currentInputs,chain,depth)=>{
+          if(depth>=maxDepth) return; const key=chain.map(c=>c.processor).join('-')+'-'+currentInputs.join(','); if(visited.has(key)) return; visited.add(key);
+          this.processors.forEach((p,name)=>{
+            const can=p.inputs.some(req=>currentInputs.some(av=>req.toLowerCase().includes(av.toLowerCase())||av.toLowerCase().includes(req.toLowerCase())));
+            if(can){ const newChain=[...chain,{step:depth+1,inputs:p.inputs,processor:name,outputs:p.outputs,processingTime:p.processingTime}]; chains.push(newChain); if(depth<maxDepth-1) explore(p.outputs,newChain,depth+1); }
+          });
+        };
+        explore([start],[],0); return chains.sort((a,b)=>b.length-a.length);
+      }
+      findInputFlow(input,maxDepth=4){
+        const flow={input,levels:[]}; let cur=[input]; const seen=new Set();
+        for(let d=0; d<maxDepth && cur.length>0; d++){
+          const next=new Set(); const level={depth:d,processors:[],outputs:new Set()};
+          cur.forEach(inp=>{ if(seen.has(inp)) return; seen.add(inp);
+            this.processors.forEach((p,name)=>{ const can=p.inputs.some(req=>req.toLowerCase().includes(inp.toLowerCase())||inp.toLowerCase().includes(req.toLowerCase())); if(can && !level.processors.some(x=>x.name===name)){ level.processors.push({name,data:p,triggerInput:inp}); p.outputs.forEach(o=>{ level.outputs.add(o); next.add(o); }); } });
+          });
+          if(level.processors.length===0) break; flow.levels.push(level); cur=Array.from(next);
+        }
+        return flow;
+      }
+      saveToLocalStorage(){ try{ const data={processors:Array.from(this.processors.entries()),timestamp:new Date().toISOString(),version:'3.3'}; localStorage.setItem('productionChainData',JSON.stringify(data)); }catch(e){ console.warn('Could not save local working copy',e);} }
+      loadFromLocalStorage(){ try{ const data=localStorage.getItem('productionChainData'); if(!data) return false; const parsed=JSON.parse(data); if(parsed && Array.isArray(parsed.processors)){ this.loadSnapshotIntoMaps(parsed); return true; } }catch(e){ console.warn('Could not load local working copy',e);} return false; }
+      loadSnapshotIntoMaps(parsed){
+        this.processors.clear(); this.inputToProcessors.clear(); this.outputToProcessors.clear();
+        parsed.processors.forEach(([name,p])=>{ if(!p||!Array.isArray(p.inputs)||!Array.isArray(p.outputs)) return; this.processors.set(name,p); p.inputs.forEach(i=>{ if(!this.inputToProcessors.has(i)) this.inputToProcessors.set(i,new Set()); this.inputToProcessors.get(i).add(name); }); p.outputs.forEach(o=>{ if(!this.outputToProcessors.has(o)) this.outputToProcessors.set(o,new Set()); this.outputToProcessors.get(o).add(name); }); });
+      }
+      async loadFromRepoJson(){
+        const candidates=['./data.json','data.json'];
+        for(const url of candidates){
+          try{
+            const res=await fetch(url,{cache:'no-store'});
+            if(!res.ok) continue;
+            const parsed=await res.json();
+            if(parsed && Array.isArray(parsed.processors)){
+              this.loadSnapshotIntoMaps(parsed);
+              this.saveToLocalStorage();
+              return true;
+            }
+          }catch(e){ console.warn('Could not load repo JSON from',url,e); }
+        }
+        return false;
+      }
+      updateStats(){
+        const pc = document.getElementById('processors-count'); if(pc) pc.textContent=this.processors.size;
+        let chains=0; this.processors.forEach(p=>chains+=p.outputs.length);
+        const cc=document.getElementById('chains-count'); if(cc) cc.textContent=chains;
+        const allIn=new Set(), allOut=new Set(); this.processors.forEach(p=>{ p.inputs.forEach(i=>allIn.add(i)); p.outputs.forEach(o=>allOut.add(o)); });
+        const ic=document.getElementById('inputs-count'); if(ic) ic.textContent=allIn.size; const oc=document.getElementById('outputs-count'); if(oc) oc.textContent=allOut.size; this.updateDropdowns();
+      }
+      updateDropdowns(){
+        const cs=document.getElementById('chain-start'); const fs=document.getElementById('flow-input');
+        if(!cs||!fs) return;
+        cs.innerHTML='<option value="">Choose a starting input...</option>'; fs.innerHTML='<option value="">Choose an input...</option>';
+        const allInputs=new Set(); this.processors.forEach(p=>p.inputs.forEach(i=>allInputs.add(i)));
+        Array.from(allInputs).sort().forEach(i=>{ const o1=document.createElement('option'); o1.value=i; o1.textContent=i; cs.appendChild(o1); const o2=document.createElement('option'); o2.value=i; o2.textContent=i; fs.appendChild(o2); });
+      }
+      getAllProcessors(){ return Array.from(this.processors.entries()).map(([name,data])=>({name,...data})); }
+      searchProcessors(q){ const out=[]; const s=q.toLowerCase(); this.processors.forEach((p,name)=>{ let score=0; const hl={name,inputs:[...p.inputs],outputs:[...p.outputs],description:p.description}; if(name.toLowerCase().includes(s)){ score+=10; hl.name=esc(name).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } p.inputs.forEach((i,idx)=>{ if(i.toLowerCase().includes(s)){ score+=5; hl.inputs[idx]=esc(i).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } }); p.outputs.forEach((o,idx)=>{ if(o.toLowerCase().includes(s)){ score+=5; hl.outputs[idx]=esc(o).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } }); if(p.description && p.description.toLowerCase().includes(s)){ score+=3; hl.description=esc(p.description).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } if(score>0) out.push({name,data:p,relevanceScore:score,highlights:hl}); }); return out.sort((a,b)=>b.relevanceScore-a.relevanceScore); }
+      exportSnapshot(){ return {processors:Array.from(this.processors.entries()),timestamp:new Date().toISOString(),version:'3.3'}; }
+      importSnapshot(data){ if(!data||!Array.isArray(data.processors)) throw new Error('Invalid data format'); this.processors.clear(); this.inputToProcessors.clear(); this.outputToProcessors.clear(); data.processors.forEach(([n,p])=>{ if(p) this.addProcessor(n,p.inputs||[],p.outputs||[],p.processingTime||'',p.description||''); }); this.updateStats(); this.saveToLocalStorage(); }
+    }
+
+    const system=new ProductionChainSystem();
+    let selectedInputs=[];
+
+    // ===== UI Helpers =====
+    function showMessage(msg,type){ document.querySelectorAll('.success-message,.error-message').forEach(m=>m.remove()); const d=document.createElement('div'); d.className=(type==='success')?'success-message':'error-message'; d.textContent=msg; const area=document.querySelector('.content-area'); area.insertBefore(d,area.firstChild); setTimeout(()=>d.remove(),4500);}    
+    function showTab(tab,btn){ document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active')); document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); document.getElementById(`${tab}-tab`).classList.add('active'); if(btn) btn.classList.add('active'); if(tab==='processors') displayAllProcessors(); }
+
+    // ===== Add Processor (UI) =====
+    function addProcessor(){
+      const name = document.getElementById('processor-name').value.trim();
+      const inputs = document.getElementById('processor-inputs').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const outputs = document.getElementById('processor-outputs').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const processingTime = document.getElementById('processing-time').value.trim();
+      const description = document.getElementById('processor-description').value.trim();
+      if(!name){ showMessage('Processor name is required.','error'); return; }
+      if(inputs.length===0){ showMessage('At least one input is required.','error'); return; }
+      if(outputs.length===0){ showMessage('At least one output is required.','error'); return; }
+      try{
+        const result = system.addProcessor(name, inputs, outputs, processingTime, description);
+        if(result === null){ showMessage('Add cancelled (existing processor not replaced).','error'); return; }
+        document.getElementById('processor-name').value = '';
+        document.getElementById('processor-inputs').value = '';
+        document.getElementById('processor-outputs').value = '';
+        document.getElementById('processing-time').value = '';
+        document.getElementById('processor-description').value = '';
+        showMessage('Successfully added processor: ' + name, 'success');
+        if (document.getElementById('processors-tab').classList.contains('active')) { displayAllProcessors(); }
+      }catch(e){ showMessage('Error adding processor: ' + e.message, 'error'); }
+    }
+
+    // ===== Discovery =====
+    function addInputChip(){ const v=document.getElementById('input-search').value.trim(); if(v && !selectedInputs.includes(v)){ selectedInputs.push(v); updateInputChips(); document.getElementById('input-search').value=''; } }
+    function removeInputChip(x){ selectedInputs=selectedInputs.filter(i=>i!==x); updateInputChips(); }
+    function updateInputChips(){ const c=document.getElementById('input-chips'); c.innerHTML=''; selectedInputs.forEach(inp=>{ const chip=document.createElement('div'); chip.className='chip'; chip.innerHTML=`${esc(inp)} <button class=\"chip-remove\" onclick=\"removeInputChip('${inp.replace(/'/g,"\\'")}')\">×</button>`; c.appendChild(chip); }); }
+    function clearInputs(){ selectedInputs=[]; updateInputChips(); document.getElementById('discovery-results').innerHTML=''; }
+    function discoverPossibilities(){ if(selectedInputs.length===0){ showMessage('Please add some inputs first.','error'); return; } const r=system.findProcessorsByInputs(selectedInputs,true); displayDiscoveryResults(r); }
+    function quickDiscover(){ const arr=document.getElementById('quick-inputs').value.split(',').map(s=>s.trim()).filter(Boolean); if(arr.length===0){ showMessage('Please enter some inputs.','error'); return; } selectedInputs=arr; updateInputChips(); discoverPossibilities(); showTab('discovery', document.querySelector('.tab:nth-child(1)')); }
+    function findOptimalChain(){ if(selectedInputs.length===0){ showMessage('Please add some inputs first.','error'); return; } const r=system.findProcessorsByInputs(selectedInputs,true); displayOptimalChain(r); }
+
+    function displayDiscoveryResults(results){ const el=document.getElementById('discovery-results'); let html='<div class="results-container">'; if(results.exactMatches.length>0){ html+='<div class="result-section"><h4>Ready-to-Process</h4><div class="result-grid">'; results.exactMatches.forEach(m=>{ html+=`<div class=\"result-card\"><strong>${esc(m.processor)}</strong><div><b>Outputs:</b> ${m.data.outputs.map(esc).join(', ')}<br/><b>Time:</b> ${esc(m.data.processingTime||'N/A')}<br/><small>${esc(m.data.description||'')}</small></div></div>`; }); html+='</div></div>'; } if(results.partialMatches.length>0){ html+='<div class="result-section"><h4>Partial Matches</h4><div class="result-grid">'; results.partialMatches.forEach(m=>{ html+=`<div class=\"result-card\"><strong>${esc(m.processor)}</strong><div><b>Missing:</b> ${m.missingInputs.map(esc).join(', ')}<br/><b>Would produce:</b> ${m.data.outputs.map(esc).join(', ')}<br/><small>${esc(m.data.description||'')}</small></div></div>`; }); html+='</div></div>'; } if(results.secondaryProcessors.length>0){ html+='<div class="result-section"><h4>Secondary Opportunities</h4><div class="result-grid">'; results.secondaryProcessors.forEach(m=>{ html+=`<div class=\"result-card\"><strong>${esc(m.processor)}</strong><div><b>Uses:</b> ${esc(m.triggerInput)}<br/><b>Produces:</b> ${m.data.outputs.map(esc).join(', ')}<br/><b>Also needs:</b> ${m.data.inputs.filter(i=>i!==m.triggerInput).map(esc).join(', ')||'Nothing else!'}<br/><small>${esc(m.data.description||'')}</small></div></div>`; }); html+='</div></div>'; } if(results.exactMatches.length===0 && results.partialMatches.length===0 && results.secondaryProcessors.length===0){ html+='<div class="result-section"><h4>No Matches Found</h4><p>Try adding different inputs or restore the base dataset.</p></div>'; } html+='</div>'; el.innerHTML=html; }
+
+    function displayOptimalChain(results){ const el=document.getElementById('discovery-results'); let html='<div class="results-container"><h4>Optimal Production Chain</h4>'; if(results.exactMatches.length>0){ const scored=results.exactMatches.map(m=>{ let s=0; m.data.outputs.forEach(o=>{ if(system.inputToProcessors.has(o)){ s+=system.inputToProcessors.get(o).size; } }); return {...m,score:s}; }).sort((a,b)=>b.score-a.score); const best=scored[0]; html+='<div class="chain-visualization">'; html+=`<div class=\"chain-step\"><div class=\"chain-item\"><b>Available Inputs</b><div>${selectedInputs.map(esc).join(', ')}</div></div><div class=\"chain-arrow\">→</div><div class=\"chain-item\"><b>${esc(best.processor)}</b><div>${esc(best.data.processingTime||'Varies')}</div></div><div class=\"chain-arrow\">→</div><div class=\"chain-item\"><b>Outputs</b><div>${best.data.outputs.map(esc).join(', ')}</div></div></div>`; html+='</div>'; } else { html+='<p>No optimal chain found for current inputs.</p>'; } html+='</div>'; el.innerHTML=html; }
+
+    // ===== Processors table =====
+    function displayAllProcessors(){ const c=document.getElementById('processors-list'); const list=system.getAllProcessors(); let h=`<table class=\"data-table\"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; list.forEach(p=>{ h+=`<tr><td><strong>${esc(p.name)}</strong><br/><small>${esc(p.description||'—')}</small></td><td>${p.inputs.map(esc).join(', ')}</td><td>${p.outputs.map(esc).join(', ')}</td><td>${esc(p.processingTime||'N/A')}</td><td><button class=\"btn btn-small btn-warning\" onclick=\"useAsTemplate('${p.name.replace(/'/g,"\\'")}')\">Template</button> <button class=\"btn btn-small btn-danger\" onclick=\"removeProcessorUI('${p.name.replace(/'/g,"\\'")}')\">Remove</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
+    function filterProcessors(){ const f=document.getElementById('processor-filter').value.trim(); if(!f){ displayAllProcessors(); return; } const r=system.searchProcessors(f); const c=document.getElementById('processors-list'); if(r.length===0){ c.innerHTML='<p>No processors found.</p>'; return; } let h=`<table class=\"data-table\"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; r.forEach(x=>{ h+=`<tr><td><strong>${x.highlights.name}</strong><br/><small>${x.highlights.description||'—'}</small></td><td>${x.highlights.inputs.join(', ')}</td><td>${x.highlights.outputs.join(', ')}</td><td>${esc(x.data.processingTime||'N/A')}</td><td><button class=\"btn btn-small btn-warning\" onclick=\"useAsTemplate('${x.name.replace(/'/g,"\\'")}')\">Template</button> <button class=\"btn btn-small btn-danger\" onclick=\"removeProcessorUI('${x.name.replace(/'/g,"\\'")}')\">Remove</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
+    function clearFilter(){ document.getElementById('processor-filter').value=''; displayAllProcessors(); }
+    function useAsTemplate(name){ const p=system.processors.get(name); if(p){ document.getElementById('processor-name').value=p.name+' (Copy)'; document.getElementById('processor-inputs').value=p.inputs.join(', '); document.getElementById('processor-outputs').value=p.outputs.join(', '); document.getElementById('processing-time').value=p.processingTime; document.getElementById('processor-description').value=p.description; showTab('discovery', document.querySelector('.tab:nth-child(1)')); showMessage('Template loaded. Edit then click Add Processor.','success'); } }
+    function removeProcessorUI(name){ if(confirm(`Remove \"${name}\"?`)){ if(system.removeProcessor(name)){ showMessage('Removed.','success'); displayAllProcessors(); } else { showMessage('Could not remove.','error'); } } }
+
+    // ===== Chains =====
+    function visualizeChain(){ const start=document.getElementById('chain-start').value; if(!start){ showMessage('Please select a starting input.','error'); return; } const chains=system.findProductionChain(start,3); displayChainVisualization(chains,start); }
+    function visualizeAllChains(){ const allInputs=new Set(); system.processors.forEach(p=>p.inputs.forEach(i=>allInputs.add(i))); const c=document.getElementById('chain-visualization'); let h='<div class="results-container"><h4>All Production Chains Overview</h4>'; Array.from(allInputs).slice(0,10).forEach(inp=>{ const chains=system.findProductionChain(inp,2); if(chains.length>0){ const procs=[...new Set(chains.map(ch=>ch[0]?.processor).filter(Boolean))]; const outs=new Set(); chains.forEach(ch=>ch.forEach(st=>st.outputs.forEach(o=>outs.add(o)))); h+=`<div class=\"chain-visualization\"><div class=\"chain-step\"><div class=\"chain-item\"><b>${esc(inp)}</b><div>Raw</div></div><div class=\"chain-arrow\">→</div><div class=\"chain-item\"><b>Processors</b><div>${procs.slice(0,3).map(esc).join(', ')}${procs.length>3?'...':''}</div></div><div class=\"chain-arrow\">→</div><div class=\"chain-item\"><b>Final</b><div>${Array.from(outs).slice(0,5).map(esc).join(', ')}${outs.size>5?'...':''}</div></div></div></div>`; } }); c.innerHTML=h+'</div>'; }
+    function displayChainVisualization(chains,startInput){ const c=document.getElementById('chain-visualization'); if(!chains||chains.length===0){ c.innerHTML=`<div class='results-container'><h4>No Production Chains Found</h4><p>No chains found for \"${esc(startInput)}\".</p></div>`; return; } let h='<div class="results-container">'; h+=`<h4>Production Chains from \"${esc(startInput)}\"</h4>`; chains.slice(0,5).forEach((chain,idx)=>{ h+='<div class="chain-visualization">'; h+=`<h5>Chain ${idx+1} (${chain.length} steps)</h5><div class=\"chain-step\"><div class=\"chain-item\"><b>Starting</b><div>${esc(startInput)}</div></div>`; chain.forEach((step,i)=>{ h+=`<div class='chain-arrow'>→</div><div class='chain-item'><b>Step ${i+1}: ${esc(step.processor)}</b><div>Time: ${esc(step.processingTime||'Varies')}</div><small>Outputs: ${step.outputs.map(esc).join(', ')}</small></div>`; }); h+='</div></div>'; }); h+='</div>'; c.innerHTML=h; }
+
+    // ===== Flow =====
+    function visualizeInputFlow(){
+      try{
+        const inp=document.getElementById('flow-input').value;
+        if(!inp){ showMessage('Select an input first.','error'); return; }
+        const flow=system.findInputFlow(inp,4);
+        const c=document.getElementById('flow-visualization');
+        let h='<div class="results-container">';
+        const inputLabel=esc(flow.input);
+        h+=`<h4>Processing Flow for \"${inputLabel}\"</h4><div class=\"flow-diagram\">`;
+        h+=`<div class='flow-level'><div class='flow-node'>${inputLabel}</div></div>`;
+        if(!flow.levels || flow.levels.length===0){
+          h+=`<div class='flow-level'><em>No processors found that use ${inputLabel}. Try another input or restore base data.</em></div>`;
+          h+='</div></div>';
+          c.innerHTML=h; return;
+        }
+        flow.levels.forEach((lvl,idx)=>{
+          h+=`<div class='flow-connector'>↓</div><div class='flow-level'><b>Level ${idx+1} Processing</b><br/>`;
+          lvl.processors.forEach(p=>{
+            const title=esc(p.data?.description||'');
+            const name=esc(p.name);
+            h+=`<span class='flow-node' title=\"${title}\">${name}</span>`;
+          });
+          h+='</div>';
+          if(lvl.outputs && lvl.outputs.size>0){
+            h+=`<div class='flow-connector'>↓</div><div class='flow-level'><b>Level ${idx+1} Outputs</b><br/>`;
+            Array.from(lvl.outputs).forEach(o=>{ h+=`<span class='flow-node'>${esc(o)}</span>`; });
+            h+='</div>';
+          }
+        });
+        h+='</div></div>';
+        c.innerHTML=h;
+      }catch(e){ console.error(e); showMessage('Could not render Input Flow (check console).','error'); }
+    }
+
+    function visualizeCompleteFlow(){
+      const c = document.getElementById('flow-visualization');
+      let h = '<div class="results-container"><h4>Complete Processing Network</h4>';
+      const allIn = new Set(), allOut = new Set();
+      system.processors.forEach(p => { p.inputs.forEach(i => allIn.add(i)); p.outputs.forEach(o => allOut.add(o)); });
+      const primary = Array.from(allIn).filter(i => !allOut.has(i));
+      const interm  = Array.from(allIn).filter(i =>  allOut.has(i));
+      h += '<div class="flow-diagram">';
+      if (primary.length > 0) {
+        h += '<div class="flow-level"><b>Primary Raw Materials</b><br/>';
+        primary.slice(0,15).forEach(i => { h += `<span class='flow-node'>${esc(i)}</span>`; });
+        h += '</div><div class="flow-connector">↓</div>';
+      }
+      h += '<div class="flow-level"><b>Processing Units</b><br/>';
+      Array.from(system.processors.keys()).slice(0,20).forEach(n => { h += `<span class='flow-node'>${esc(n)}</span>`; });
+      h += '</div><div class="flow-connector">↓</div>';
+      if (interm.length > 0) {
+        h += '<div class="flow-level"><b>Intermediate Products</b><br/>';
+        interm.slice(0,15).forEach(i => { h += `<span class='flow-node'>${esc(i)}</span>`; });
+        h += '</div><div class="flow-connector">↓</div>';
+      }
+      const finals = Array.from(allOut).filter(o => !allIn.has(o));
+      if (finals.length > 0) {
+        h += '<div class="flow-level"><b>Final Products</b><br/>';
+        finals.slice(0,20).forEach(o => { h += `<span class='flow-node'>${esc(o)}</span>`; });
+        h += '</div>';
+      }
+      h += '</div></div>';
+      c.innerHTML = h;
+    }
+
+    // ===== Export / Import =====
+    function exportJson(){
+      try{
+        const data=system.exportSnapshot();
+        const json=JSON.stringify(data,null,2);
+        const filename='rural_production_chain_data.json';
+        if('showSaveFilePicker' in window){
+          window.showSaveFilePicker({suggestedName:filename,types:[{description:'JSON',accept:{'application/json':['.json']}}]}).then(async handle=>{
+            const w=await handle.createWritable(); await w.write(new Blob([json],{type:'application/json;charset=utf-8'})); await w.close(); showMessage('Exported JSON to your chosen location.','success');
+          }).catch(()=>{ showMessage('Export cancelled or blocked.','error'); });
+        } else {
+          // Fallback: force a normal download without extra UI
+          const blob=new Blob([json],{type:'application/json;charset=utf-8'});
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+          showMessage('Exported JSON downloaded.','success');
+        }
+      }catch(e){ showMessage('Export error: '+e.message,'error'); }
+    }
+
+    function importData(ev){ const f=ev.target.files&&ev.target.files[0]; if(f){ const r=new FileReader(); r.onload=e=>{ try{ const d=JSON.parse(e.target.result); system.importSnapshot(d); showMessage('Data imported.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }; r.readAsText(f); } ev.target.value=''; }
+    function importFromTextarea(){ const txt=document.getElementById('json-import').value.trim(); if(!txt){ showMessage('Paste JSON first.','error'); return; } try{ const d=JSON.parse(txt); system.importSnapshot(d); showMessage('Data imported from pasted JSON.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }
+    function restoreBaseData(){ if(confirm('This will restore the original base dataset and overwrite current data. Continue?')){ system.seedBase(); showMessage('Base dataset restored.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); } }
+
+    // ===== Export Menu (Save As → Export JSON) =====
+    let __exportObjectUrl = null;
+    function buildExportArtifacts(){
+      try{
+        const data = system.exportSnapshot();
+        const json = JSON.stringify(data, null, 2);
+        const ta = document.getElementById('export-json-text');
+        if (ta) ta.value = json;
+        if (__exportObjectUrl) { try{ URL.revokeObjectURL(__exportObjectUrl); }catch(_){} __exportObjectUrl = null; }
+        const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+        __exportObjectUrl = URL.createObjectURL(blob);
+        const dl = document.getElementById('export-download-link');
+        if (dl) dl.href = __exportObjectUrl;
+        const op = document.getElementById('export-open-link');
+        if (op) op.href = __exportObjectUrl;
+        const st = document.getElementById('export-status');
+        if (st) st.textContent = 'Export ready.';
+        showMessage('Export ready. Use Download file or Copy JSON.', 'success');
+      }catch(e){ showMessage('Export generation failed: ' + e.message, 'error'); }
+    }
+    async function copyExportJson(){
+      try{
+        const ta = document.getElementById('export-json-text');
+        if (ta && !ta.value) buildExportArtifacts();
+        const text = (document.getElementById('export-json-text')||{}).value || JSON.stringify(system.exportSnapshot(), null, 2);
+        if (navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); }
+        else { const tmp=document.createElement('textarea'); tmp.value=text; document.body.appendChild(tmp); tmp.select(); document.execCommand('copy'); tmp.remove(); }
+        showMessage('JSON copied to clipboard.', 'success');
+      }catch(e){ showMessage('Copy failed: ' + e.message, 'error'); }
+    }
+    window.addEventListener('beforeunload', ()=>{ if(__exportObjectUrl){ try{ URL.revokeObjectURL(__exportObjectUrl); }catch(_){} } });
+
+    function downloadRepoDataJson(){
+      try{
+        const json = JSON.stringify(system.exportSnapshot(), null, 2);
+        const blob = new Blob([json], {type:'application/json;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'data.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showMessage('Downloaded data.json. Replace the repo file with this to publish updated data.', 'success');
+      }catch(e){ showMessage('Could not prepare data.json download: ' + e.message, 'error'); }
+    }
+
+    // ===== Event listeners =====
+    document.getElementById('input-search').addEventListener('keypress',e=>{ if(e.key==='Enter') addInputChip(); });
+    document.getElementById('processor-filter').addEventListener('keypress',e=>{ if(e.key==='Enter') filterProcessors(); });
+    document.addEventListener('DOMContentLoaded', async ()=>{
+      updateInputChips();
+      let source = 'local working copy';
+      const loadedLocal = system.loadFromLocalStorage();
+      if(!loadedLocal){
+        const loadedRepo = await system.loadFromRepoJson();
+        if(loadedRepo) source = 'repo data.json';
+        else { system.seedBase(); source = 'embedded base dataset'; }
+      }
+      system.updateStats();
+      const n=document.createElement('div');
+      n.className='data-persistence';
+      n.innerHTML='Loaded from <b>'+esc(source)+'</b>. Changes save to this browser immediately. To publish them for everyone, download <code>data.json</code> and replace the repo file on GitHub.';
+      document.querySelector('.sidebar').insertBefore(n, document.querySelector('.sidebar').firstChild);
+    });
+  </script>
+</body>
+</html>
