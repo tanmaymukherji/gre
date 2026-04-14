@@ -14,27 +14,16 @@ class ProductionChainSystem {
     this.outputToProcessors=new Map();
     this.updateStats();
   }
-  seedBase(){ AppDataStore.seedBase(this); }
-  addProcessor(name,inputs,outputs,processingTime='',description=''){
+  async seedBase(){ await AppDataStore.seedBase(this); }
+  async addProcessor(name,inputs,outputs,processingTime='',description=''){
     if(!name||!name.trim()) throw new Error('Processor name is required');
     if(this.processors.has(name)&&!confirm(`Processor "${name}" already exists. Replace it?`)) return null;
     const p={name:name.trim(),inputs:inputs.map(i=>i.trim()).filter(Boolean),outputs:outputs.map(o=>o.trim()).filter(Boolean),processingTime:processingTime.trim(),description:description.trim()};
     if(p.inputs.length===0) throw new Error('At least one input is required');
     if(p.outputs.length===0) throw new Error('At least one output is required');
-    if(this.processors.has(name)) this.removeProcessor(name,false);
-    this.processors.set(name,p);
-    p.inputs.forEach(i=>{ if(!this.inputToProcessors.has(i)) this.inputToProcessors.set(i,new Set()); this.inputToProcessors.get(i).add(name); });
-    p.outputs.forEach(o=>{ if(!this.outputToProcessors.has(o)) this.outputToProcessors.set(o,new Set()); this.outputToProcessors.get(o).add(name); });
-    this.saveToLocalStorage(); this.updateStats(); return p;
+    return await AppDataStore.upsertProcessor(this, p.name, p.inputs, p.outputs, p.processingTime, p.description);
   }
-  removeProcessor(name,updateUI=true){
-    const p=this.processors.get(name); if(!p) return false;
-    p.inputs.forEach(i=>{ if(this.inputToProcessors.has(i)){ this.inputToProcessors.get(i).delete(name); if(this.inputToProcessors.get(i).size===0) this.inputToProcessors.delete(i);} });
-    p.outputs.forEach(o=>{ if(this.outputToProcessors.has(o)){ this.outputToProcessors.get(o).delete(name); if(this.outputToProcessors.get(o).size===0) this.outputToProcessors.delete(o);} });
-    this.processors.delete(name);
-    if(updateUI){ this.saveToLocalStorage(); this.updateStats(); }
-    return true;
-  }
+  async removeProcessor(name){ return await AppDataStore.deleteProcessor(this, name); }
   findProcessorsByInputs(availableInputs,allowPartial=true){
     const res={exactMatches:[],partialMatches:[],possibleOutputs:new Set(),secondaryProcessors:[]};
     this.processors.forEach((p,name)=>{
@@ -68,8 +57,6 @@ class ProductionChainSystem {
     }
     return flow;
   }
-  saveToLocalStorage(){ AppDataStore.saveToLocalStorage(this); }
-  loadFromLocalStorage(){ return AppDataStore.loadFromLocalStorage(this); }
   loadSnapshotIntoMaps(parsed){
     this.processors.clear(); this.inputToProcessors.clear(); this.outputToProcessors.clear();
     parsed.processors.forEach(([name,p])=>{ if(!p||!Array.isArray(p.inputs)||!Array.isArray(p.outputs)) return; this.processors.set(name,p); p.inputs.forEach(i=>{ if(!this.inputToProcessors.has(i)) this.inputToProcessors.set(i,new Set()); this.inputToProcessors.get(i).add(name); }); p.outputs.forEach(o=>{ if(!this.outputToProcessors.has(o)) this.outputToProcessors.set(o,new Set()); this.outputToProcessors.get(o).add(name); }); });
@@ -91,7 +78,7 @@ class ProductionChainSystem {
   getAllProcessors(){ return Array.from(this.processors.entries()).map(([name,data])=>({name,...data})); }
   searchProcessors(q){ const out=[]; const s=q.toLowerCase(); this.processors.forEach((p,name)=>{ let score=0; const hl={name,inputs:[...p.inputs],outputs:[...p.outputs],description:p.description}; if(name.toLowerCase().includes(s)){ score+=10; hl.name=esc(name).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } p.inputs.forEach((i,idx)=>{ if(i.toLowerCase().includes(s)){ score+=5; hl.inputs[idx]=esc(i).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } }); p.outputs.forEach((o,idx)=>{ if(o.toLowerCase().includes(s)){ score+=5; hl.outputs[idx]=esc(o).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } }); if(p.description && p.description.toLowerCase().includes(s)){ score+=3; hl.description=esc(p.description).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } if(score>0) out.push({name,data:p,relevanceScore:score,highlights:hl}); }); return out.sort((a,b)=>b.relevanceScore-a.relevanceScore); }
   exportSnapshot(){ return AppDataStore.createSnapshot(this); }
-  importSnapshot(data){ AppDataStore.importSnapshot(this, data); }
+  async importSnapshot(data){ await AppDataStore.importSnapshot(this, data); }
 }
 
 const system=new ProductionChainSystem();
@@ -102,7 +89,7 @@ function showMessage(msg,type){ document.querySelectorAll('.success-message,.err
 function showTab(tab,btn){ document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active')); document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); document.getElementById(`${tab}-tab`).classList.add('active'); if(btn) btn.classList.add('active'); if(tab==='processors') displayAllProcessors(); }
 
 // ===== Add Processor (UI) =====
-function addProcessor(){
+async function addProcessor(){
   const name = document.getElementById('processor-name').value.trim();
   const inputs = document.getElementById('processor-inputs').value.split(',').map(s=>s.trim()).filter(Boolean);
   const outputs = document.getElementById('processor-outputs').value.split(',').map(s=>s.trim()).filter(Boolean);
@@ -112,7 +99,7 @@ function addProcessor(){
   if(inputs.length===0){ showMessage('At least one input is required.','error'); return; }
   if(outputs.length===0){ showMessage('At least one output is required.','error'); return; }
   try{
-    const result = system.addProcessor(name, inputs, outputs, processingTime, description);
+    const result = await system.addProcessor(name, inputs, outputs, processingTime, description);
     if(result === null){ showMessage('Add cancelled (existing processor not replaced).','error'); return; }
     document.getElementById('processor-name').value = '';
     document.getElementById('processor-inputs').value = '';
@@ -142,7 +129,7 @@ function displayAllProcessors(){ const c=document.getElementById('processors-lis
 function filterProcessors(){ const f=document.getElementById('processor-filter').value.trim(); if(!f){ displayAllProcessors(); return; } const r=system.searchProcessors(f); const c=document.getElementById('processors-list'); if(r.length===0){ c.innerHTML='<p>No processors found.</p>'; return; } let h=`<table class="data-table"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; r.forEach(x=>{ h+=`<tr><td><strong>${x.highlights.name}</strong><br/><small>${x.highlights.description||'-'}</small></td><td>${x.highlights.inputs.join(', ')}</td><td>${x.highlights.outputs.join(', ')}</td><td>${esc(x.data.processingTime||'N/A')}</td><td><button class="btn btn-small btn-warning" onclick="useAsTemplate('${x.name.replace(/'/g,"\\'")}')">Template</button> <button class="btn btn-small btn-danger" onclick="removeProcessorUI('${x.name.replace(/'/g,"\\'")}')">Remove</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
 function clearFilter(){ document.getElementById('processor-filter').value=''; displayAllProcessors(); }
 function useAsTemplate(name){ const p=system.processors.get(name); if(p){ document.getElementById('processor-name').value=p.name+' (Copy)'; document.getElementById('processor-inputs').value=p.inputs.join(', '); document.getElementById('processor-outputs').value=p.outputs.join(', '); document.getElementById('processing-time').value=p.processingTime; document.getElementById('processor-description').value=p.description; showTab('discovery', document.querySelector('.tab:nth-child(1)')); showMessage('Template loaded. Edit then click Add Processor.','success'); } }
-function removeProcessorUI(name){ if(confirm(`Remove "${name}"?`)){ if(system.removeProcessor(name)){ showMessage('Removed.','success'); displayAllProcessors(); } else { showMessage('Could not remove.','error'); } } }
+async function removeProcessorUI(name){ if(confirm(`Remove "${name}"?`)){ try{ if(await system.removeProcessor(name)){ showMessage('Removed from Supabase.','success'); displayAllProcessors(); } else { showMessage('Could not remove.','error'); } }catch(e){ showMessage('Could not remove: ' + e.message,'error'); } } }
 
 // ===== Chains =====
 function visualizeChain(){ const start=document.getElementById('chain-start').value; if(!start){ showMessage('Please select a starting input.','error'); return; } const chains=system.findProductionChain(start,3); displayChainVisualization(chains,start); }
@@ -234,9 +221,9 @@ function exportJson(){
   }catch(e){ showMessage('Export error: '+e.message,'error'); }
 }
 
-function importData(ev){ const f=ev.target.files&&ev.target.files[0]; if(f){ const r=new FileReader(); r.onload=e=>{ try{ const d=JSON.parse(e.target.result); system.importSnapshot(d); showMessage('Data imported.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }; r.readAsText(f); } ev.target.value=''; }
-function importFromTextarea(){ const txt=document.getElementById('json-import').value.trim(); if(!txt){ showMessage('Paste JSON first.','error'); return; } try{ const d=JSON.parse(txt); system.importSnapshot(d); showMessage('Data imported from pasted JSON.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }
-function restoreBaseData(){ if(confirm('This will restore the original base dataset and overwrite current data. Continue?')){ system.seedBase(); showMessage('Base dataset restored.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); } }
+function importData(ev){ const f=ev.target.files&&ev.target.files[0]; if(f){ const r=new FileReader(); r.onload=async e=>{ try{ const d=JSON.parse(e.target.result); await system.importSnapshot(d); showMessage('Data imported into Supabase.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }; r.readAsText(f); } ev.target.value=''; }
+async function importFromTextarea(){ const txt=document.getElementById('json-import').value.trim(); if(!txt){ showMessage('Paste JSON first.','error'); return; } try{ const d=JSON.parse(txt); await system.importSnapshot(d); showMessage('Data imported into Supabase from pasted JSON.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }
+async function restoreBaseData(){ if(confirm('This will restore the original base dataset and overwrite current Supabase data. Continue?')){ try{ await system.seedBase(); showMessage('Base dataset restored to Supabase.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Restore failed: ' + err.message,'error'); } } }
 
 // ===== Export Menu =====
 let __exportObjectUrl = null;
@@ -282,7 +269,7 @@ function downloadRepoDataJson(){
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showMessage('Downloaded data.json. Replace the repo file with this to publish updated data.', 'success');
+    showMessage('Downloaded data.json backup from the current Supabase-backed state.', 'success');
   }catch(e){ showMessage('Could not prepare data.json download: ' + e.message, 'error'); }
 }
 
@@ -291,12 +278,19 @@ document.getElementById('input-search').addEventListener('keypress',e=>{ if(e.ke
 document.getElementById('processor-filter').addEventListener('keypress',e=>{ if(e.key==='Enter') filterProcessors(); });
 document.addEventListener('DOMContentLoaded', async ()=>{
   updateInputChips();
-  let source = 'local working copy';
-  const loadedLocal = system.loadFromLocalStorage();
-  if(!loadedLocal){ system.seedBase(); source = 'embedded base dataset'; }
-  system.updateStats();
+  let source = 'Supabase';
+  try{
+    const count = await AppDataStore.loadProcessors(system);
+    if(count===0){
+      source = 'Supabase (empty table)';
+      showMessage('Supabase table is empty. Use Restore Base Data or import JSON to populate it.','error');
+    }
+  }catch(e){
+    source = 'configuration error';
+    showMessage(e.message,'error');
+  }
   const n=document.createElement('div');
   n.className='data-persistence';
-  n.innerHTML='Loaded from <b>'+esc(source)+'</b>. Changes save to this browser immediately. JSON export and import remain available as backup utilities.';
+  n.innerHTML='Loaded from <b>'+esc(source)+'</b>. Add, remove, restore, and JSON import operations write to Supabase. JSON export remains available as a backup.';
   document.querySelector('.sidebar').insertBefore(n, document.querySelector('.sidebar').firstChild);
 });
