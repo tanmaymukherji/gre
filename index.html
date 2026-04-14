@@ -44,38 +44,6 @@
           <button class="btn btn-warning" onclick="quickDiscover()">Discover Possibilities</button>
         </div>
 
-        <div class="section">
-          <h3>Supabase Config</h3>
-          <div class="data-persistence" style="background:#eef8f2;border-color:#b7e1c0;color:#155724">
-            Runtime config is loaded from <code>config.js</code>. GitHub Pages generates it from repository secrets during deploy. Use the anon key only.
-          </div>
-        </div>
-
-        <div class="section">
-          <h3>Data Management</h3>
-          <div class="data-persistence" style="background:#e8f4fd;border-color:#b6dcfe;color:#0c5460">This version loads processors from Supabase on page load. JSON export and import remain available as backup utilities.</div>
-          <div class="btn-group" style="flex-direction:column">
-            <details id="export-json-panel"><summary>Export JSON</summary>
-              <div class="btn-group" style="margin-top:.5rem">
-                <button class="btn btn-small" onclick="buildExportArtifacts()">Generate export</button>
-                <a id="export-download-link" class="btn btn-small" download="rural_production_chain_data.json" href="#" onclick="return !!this.href && this.href !== '#';">Download file</a>
-                <a id="export-open-link" class="btn btn-small" target="_blank" rel="noopener" href="#">Open in new tab</a>
-                <button class="btn btn-small" onclick="copyExportJson()">Copy JSON</button>
-              </div>
-              <textarea id="export-json-text" rows="8" style="width:100%;margin-top:.5rem" readonly placeholder="Click 'Generate export' to populate..."></textarea>
-              <small id="export-status" style="display:block;margin-top:.25rem;color:#6c757d">Not generated yet.</small>
-            </details>
-            <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importData(event)" />
-            <button class="btn btn-small" onclick="document.getElementById('import-file').click()">Import JSON File</button>
-            <details>
-              <summary>Paste JSON to Import</summary>
-              <textarea id="json-import" rows="8" style="width:100%" placeholder='{"processors": ... }'></textarea>
-              <div class="btn-group" style="margin-top:.5rem"><button class="btn btn-small" onclick="importFromTextarea()">Import From Pasted JSON</button></div>
-            </details>
-            <button class="btn btn-small" onclick="downloadRepoDataJson()">Download current data.json</button>
-            <button class="btn btn-danger btn-small" onclick="restoreBaseData()">Restore Base Data</button>
-          </div>
-        </div>
       </div>
 
       <div class="content-area">
