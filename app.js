@@ -14,7 +14,6 @@ class ProductionChainSystem {
     this.outputToProcessors=new Map();
     this.updateStats();
   }
-  async seedBase(){ await AppDataStore.seedBase(this); }
   async addProcessor(name,inputs,outputs,processingTime='',description=''){
     if(!name||!name.trim()) throw new Error('Processor name is required');
     if(this.processors.has(name)&&!confirm(`Processor "${name}" already exists. Replace it?`)) return null;
@@ -57,10 +56,6 @@ class ProductionChainSystem {
     }
     return flow;
   }
-  loadSnapshotIntoMaps(parsed){
-    this.processors.clear(); this.inputToProcessors.clear(); this.outputToProcessors.clear();
-    parsed.processors.forEach(([name,p])=>{ if(!p||!Array.isArray(p.inputs)||!Array.isArray(p.outputs)) return; this.processors.set(name,p); p.inputs.forEach(i=>{ if(!this.inputToProcessors.has(i)) this.inputToProcessors.set(i,new Set()); this.inputToProcessors.get(i).add(name); }); p.outputs.forEach(o=>{ if(!this.outputToProcessors.has(o)) this.outputToProcessors.set(o,new Set()); this.outputToProcessors.get(o).add(name); }); });
-  }
   updateStats(){
     const pc = document.getElementById('processors-count'); if(pc) pc.textContent=this.processors.size;
     let chains=0; this.processors.forEach(p=>chains+=p.outputs.length);
@@ -77,8 +72,6 @@ class ProductionChainSystem {
   }
   getAllProcessors(){ return Array.from(this.processors.entries()).map(([name,data])=>({name,...data})); }
   searchProcessors(q){ const out=[]; const s=q.toLowerCase(); this.processors.forEach((p,name)=>{ let score=0; const hl={name,inputs:[...p.inputs],outputs:[...p.outputs],description:p.description}; if(name.toLowerCase().includes(s)){ score+=10; hl.name=esc(name).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } p.inputs.forEach((i,idx)=>{ if(i.toLowerCase().includes(s)){ score+=5; hl.inputs[idx]=esc(i).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } }); p.outputs.forEach((o,idx)=>{ if(o.toLowerCase().includes(s)){ score+=5; hl.outputs[idx]=esc(o).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } }); if(p.description && p.description.toLowerCase().includes(s)){ score+=3; hl.description=esc(p.description).replace(new RegExp(`(${q})`,'gi'),'<span style="background:#ffeb3b">$1</span>'); } if(score>0) out.push({name,data:p,relevanceScore:score,highlights:hl}); }); return out.sort((a,b)=>b.relevanceScore-a.relevanceScore); }
-  exportSnapshot(){ return AppDataStore.createSnapshot(this); }
-  async importSnapshot(data){ await AppDataStore.importSnapshot(this, data); }
 }
 
 const system=new ProductionChainSystem();
@@ -207,77 +200,6 @@ function visualizeCompleteFlow(){
   c.innerHTML = h;
 }
 
-// ===== Export / Import =====
-function exportJson(){
-  try{
-    const data=system.exportSnapshot();
-    const json=JSON.stringify(data,null,2);
-    const filename='rural_production_chain_data.json';
-    if('showSaveFilePicker' in window){
-      window.showSaveFilePicker({suggestedName:filename,types:[{description:'JSON',accept:{'application/json':['.json']}}]}).then(async handle=>{
-        const w=await handle.createWritable(); await w.write(new Blob([json],{type:'application/json;charset=utf-8'})); await w.close(); showMessage('Exported JSON to your chosen location.','success');
-      }).catch(()=>{ showMessage('Export cancelled or blocked.','error'); });
-    } else {
-      const blob=new Blob([json],{type:'application/json;charset=utf-8'});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      showMessage('Exported JSON downloaded.','success');
-    }
-  }catch(e){ showMessage('Export error: '+e.message,'error'); }
-}
-
-function importData(ev){ const f=ev.target.files&&ev.target.files[0]; if(f){ const r=new FileReader(); r.onload=async e=>{ try{ const d=JSON.parse(e.target.result); await system.importSnapshot(d); showMessage('Data imported into Supabase.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }; r.readAsText(f); } ev.target.value=''; }
-async function importFromTextarea(){ const txt=document.getElementById('json-import').value.trim(); if(!txt){ showMessage('Paste JSON first.','error'); return; } try{ const d=JSON.parse(txt); await system.importSnapshot(d); showMessage('Data imported into Supabase from pasted JSON.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Import error: '+err.message,'error'); } }
-async function restoreBaseData(){ if(confirm('This will restore the original base dataset and overwrite current Supabase data. Continue?')){ try{ await system.seedBase(); showMessage('Base dataset restored to Supabase.','success'); if(document.getElementById('processors-tab').classList.contains('active')) displayAllProcessors(); }catch(err){ showMessage('Restore failed: ' + err.message,'error'); } } }
-
-// ===== Export Menu =====
-let __exportObjectUrl = null;
-function buildExportArtifacts(){
-  try{
-    const data = system.exportSnapshot();
-    const json = JSON.stringify(data, null, 2);
-    const ta = document.getElementById('export-json-text');
-    if (ta) ta.value = json;
-    if (__exportObjectUrl) { try{ URL.revokeObjectURL(__exportObjectUrl); }catch(_){} __exportObjectUrl = null; }
-    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-    __exportObjectUrl = URL.createObjectURL(blob);
-    const dl = document.getElementById('export-download-link');
-    if (dl) dl.href = __exportObjectUrl;
-    const op = document.getElementById('export-open-link');
-    if (op) op.href = __exportObjectUrl;
-    const st = document.getElementById('export-status');
-    if (st) st.textContent = 'Export ready.';
-    showMessage('Export ready. Use Download file or Copy JSON.', 'success');
-  }catch(e){ showMessage('Export generation failed: ' + e.message, 'error'); }
-}
-async function copyExportJson(){
-  try{
-    const ta = document.getElementById('export-json-text');
-    if (ta && !ta.value) buildExportArtifacts();
-    const text = (document.getElementById('export-json-text')||{}).value || JSON.stringify(system.exportSnapshot(), null, 2);
-    if (navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); }
-    else { const tmp=document.createElement('textarea'); tmp.value=text; document.body.appendChild(tmp); tmp.select(); document.execCommand('copy'); tmp.remove(); }
-    showMessage('JSON copied to clipboard.', 'success');
-  }catch(e){ showMessage('Copy failed: ' + e.message, 'error'); }
-}
-window.addEventListener('beforeunload', ()=>{ if(__exportObjectUrl){ try{ URL.revokeObjectURL(__exportObjectUrl); }catch(_){} } });
-
-function downloadRepoDataJson(){
-  try{
-    const json = JSON.stringify(system.exportSnapshot(), null, 2);
-    const blob = new Blob([json], {type:'application/json;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'data.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showMessage('Downloaded data.json backup from the current Supabase-backed state.', 'success');
-  }catch(e){ showMessage('Could not prepare data.json download: ' + e.message, 'error'); }
-}
-
 // ===== Event listeners =====
 document.getElementById('input-search').addEventListener('keypress',e=>{ if(e.key==='Enter') addInputChip(); });
 document.getElementById('processor-filter').addEventListener('keypress',e=>{ if(e.key==='Enter') filterProcessors(); });
@@ -296,7 +218,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
   const n=document.createElement('div');
   n.className='data-persistence';
-  n.innerHTML='Loaded from <b>'+esc(source)+'</b>. Add, remove, restore, and JSON import operations write to Supabase. JSON export remains available as a backup.';
+  n.innerHTML='Loaded from <b>'+esc(source)+'</b>. Add and remove operations write directly to Supabase.';
   document.querySelector('.sidebar').insertBefore(n, document.querySelector('.sidebar').firstChild);
   refreshActiveTab();
 });
