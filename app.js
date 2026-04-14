@@ -205,20 +205,13 @@ document.getElementById('input-search').addEventListener('keypress',e=>{ if(e.ke
 document.getElementById('processor-filter').addEventListener('keypress',e=>{ if(e.key==='Enter') filterProcessors(); });
 document.addEventListener('DOMContentLoaded', async ()=>{
   updateInputChips();
-  let source = 'Supabase';
   try{
     const count = await AppDataStore.loadProcessors(system);
     if(count===0){
-      source = 'Supabase (empty table)';
-      showMessage('Supabase table is empty. Use Restore Base Data or import JSON to populate it.','error');
+      showMessage('Supabase table is empty.','error');
     }
   }catch(e){
-    source = 'configuration error';
     showMessage(e.message,'error');
   }
-  const n=document.createElement('div');
-  n.className='data-persistence';
-  n.innerHTML='Loaded from <b>'+esc(source)+'</b>. Add and remove operations write directly to Supabase.';
-  document.querySelector('.sidebar').insertBefore(n, document.querySelector('.sidebar').firstChild);
   refreshActiveTab();
 });
