@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
   <title>Rural India Production Chain Management System — v3.3 (Minimal Export Change)</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
+  <script src="./config.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+  <style media="not all">
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Segoe UI',Tahoma,Verdana,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}
     .container{max-width:1400px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.1);overflow:hidden}
@@ -97,7 +100,7 @@
         <div class="section">
           <h3>Supabase Config</h3>
           <div class="data-persistence" style="background:#eef8f2;border-color:#b7e1c0;color:#155724">
-            Set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> in the script config below. Use the anon key only.
+            Runtime config is loaded from <code>config.js</code>. GitHub Pages can generate it from repository secrets during deploy. Use the anon key only.
           </div>
         </div>
 
@@ -199,7 +202,7 @@
     </div>
   </div>
 
-  <script>
+  <script type="application/ignored">
     // ===== Helpers =====
     const esc = (s) => String(s)
       .replace(/&/g,'&amp;')
@@ -562,5 +565,7 @@
       document.querySelector('.sidebar').insertBefore(n, document.querySelector('.sidebar').firstChild);
     });
   </script>
+  <script src="./data-store.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
