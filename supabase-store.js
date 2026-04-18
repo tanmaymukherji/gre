@@ -51,33 +51,28 @@ const AppDataStore = (() => {
   }
 
   async function loadProcessors(system){
-    const { data, error } = await getClient().from(TABLE()).select('name, inputs, outputs, processing_time, description').order('name');
+    const { data, error } = await getClient().from(TABLE()).select('id, name, inputs, outputs, processing_time, description, status').eq('status', 'approved').order('name');
     if(error) throw new Error('Supabase load failed: ' + error.message);
     rebuildMaps(system, (data || []).map(fromRow));
     system.updateStats();
     return (data || []).length;
   }
 
-  async function upsertProcessor(system, name, inputs, outputs, processingTime = '', description = ''){
+  async function submitProcessor(name, inputs, outputs, processingTime = '', description = ''){
     const processor = normalizeProcessor(name, inputs, outputs, processingTime, description);
-    const { data, error } = await getClient().from(TABLE()).upsert(toRow(processor), { onConflict: 'name' }).select('name, inputs, outputs, processing_time, description').single();
-    if(error) throw new Error('Supabase write failed: ' + error.message);
-    const saved = fromRow(data);
-    const next = Array.from(system.processors.values()).filter((item) => item.name !== saved.name);
-    next.push(saved);
-    rebuildMaps(system, next);
-    system.updateStats();
-    return saved;
+    const payload = {
+      ...toRow(processor),
+      status: 'pending',
+      approved_at: null,
+      approved_by: null
+    };
+    const { data, error } = await getClient().from(TABLE()).insert(payload).select('id, name, inputs, outputs, processing_time, description, status').single();
+    if(error){
+      if(error.code === '23505') throw new Error('A processor with this name already exists or is already waiting for approval');
+      throw new Error('Supabase write failed: ' + error.message);
+    }
+    return fromRow(data);
   }
 
-  async function deleteProcessor(system, name){
-    if(!system.processors.has(name)) return false;
-    const { error } = await getClient().from(TABLE()).delete().eq('name', name);
-    if(error) throw new Error('Supabase delete failed: ' + error.message);
-    rebuildMaps(system, Array.from(system.processors.values()).filter((item) => item.name !== name));
-    system.updateStats();
-    return true;
-  }
-
-  return { deleteProcessor, loadProcessors, upsertProcessor };
+  return { loadProcessors, submitProcessor };
 })();

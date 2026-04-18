@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Processor Admin Approval</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="admin-body auth-loading">
+  <div class="admin-shell">
+    <header class="admin-header">
+      <div>
+        <p class="admin-kicker">Rural India Production Chain Management System</p>
+        <h1>Processor Admin Approval</h1>
+      </div>
+      <div class="admin-header-actions">
+        <a class="btn btn-small" href="./index.html">Back to Tool</a>
+      </div>
+    </header>
+
+    <main class="admin-grid">
+      <section class="section admin-panel">
+        <h3>Admin Login</h3>
+        <form class="admin-form" id="loginForm">
+          <div class="form-group">
+            <label for="adminPassword">Admin Password</label>
+            <input id="adminPassword" name="adminPassword" type="password" placeholder="Enter admin password" required />
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-success" type="submit">Sign In</button>
+          </div>
+          <p class="admin-status" id="loginStatus"></p>
+        </form>
+
+        <div id="sessionPanel" class="session-panel">
+          <h3>Admin Controls</h3>
+          <div class="btn-group">
+            <a class="btn btn-small" href="./admin-password.html">Change Password</a>
+            <button class="btn btn-warning btn-small" type="button" id="refreshQueue">Refresh Queue</button>
+            <button class="btn btn-danger btn-small" type="button" id="signOutButton">Sign Out</button>
+          </div>
+          <p class="admin-status" id="sessionStatus"></p>
+        </div>
+      </section>
+
+      <section class="section admin-panel queue-panel" id="queuePanel">
+        <h3>Pending Processor Queue</h3>
+        <p class="admin-helper" id="queueMeta">Sign in as admin to load pending submissions.</p>
+        <div class="admin-card-list" id="queueList"></div>
+      </section>
+
+      <section class="section admin-panel queue-panel" id="allProcessorsPanel">
+        <h3>All Processor Records</h3>
+        <p class="admin-helper" id="allProcessorsMeta">Sign in as admin to load all processors.</p>
+        <div class="admin-card-list" id="allProcessorsList"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./admin-tools.js"></script>
+</body>
+</html>

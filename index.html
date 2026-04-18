@@ -14,6 +14,7 @@
     <div class="header">
       <h1>Rural India Production Chain Management System</h1>
       <p>Model agricultural and rural processing relationships to discover production possibilities</p>
+      <p class="header-link-row"><a class="header-link" href="./admin-tools.html">Admin approval</a></p>
     </div>
 
     <div class="main-content">
@@ -30,12 +31,13 @@
 
         <div class="section">
           <h3>Add New Processor</h3>
+          <p class="section-note">New processor submissions go into an admin approval queue before they appear in the public directory.</p>
           <div class="form-group"><label>Processor Name</label><input id="processor-name" placeholder="e.g., Rice Mill, Oil Expeller" /></div>
           <div class="form-group"><label>Inputs (comma-separated)</label><textarea id="processor-inputs" rows="3" placeholder="e.g., Paddy, Electricity, Water"></textarea></div>
           <div class="form-group"><label>Outputs (comma-separated)</label><textarea id="processor-outputs" rows="3" placeholder="e.g., Rice, Rice Bran, Rice Husk"></textarea></div>
           <div class="form-group"><label>Processing Time (optional)</label><input id="processing-time" placeholder="e.g., 2-4 hours, Seasonal" /></div>
           <div class="form-group"><label>Description (optional)</label><textarea id="processor-description" rows="2" placeholder="Brief description"></textarea></div>
-          <button class="btn btn-success" onclick="addProcessor()">Add Processor</button>
+          <button class="btn btn-success" onclick="addProcessor()">Submit for Approval</button>
         </div>
 
         <div class="section">
@@ -76,7 +78,7 @@
 
         <div class="tab-content" id="processors-tab">
           <div class="section">
-            <h3>All Processors Database</h3>
+            <h3>Approved Processors Database</h3>
             <div class="btn-group">
               <input id="processor-filter" placeholder="Search processors..." style="flex:1" />
               <button class="btn btn-small" onclick="filterProcessors()">Filter</button>

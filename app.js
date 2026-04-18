@@ -16,13 +16,12 @@ class ProductionChainSystem {
   }
   async addProcessor(name,inputs,outputs,processingTime='',description=''){
     if(!name||!name.trim()) throw new Error('Processor name is required');
-    if(this.processors.has(name)&&!confirm(`Processor "${name}" already exists. Replace it?`)) return null;
+    if(this.processors.has(name.trim())) throw new Error(`Processor "${name.trim()}" already exists in the approved directory`);
     const p={name:name.trim(),inputs:inputs.map(i=>i.trim()).filter(Boolean),outputs:outputs.map(o=>o.trim()).filter(Boolean),processingTime:processingTime.trim(),description:description.trim()};
     if(p.inputs.length===0) throw new Error('At least one input is required');
     if(p.outputs.length===0) throw new Error('At least one output is required');
-    return await AppDataStore.upsertProcessor(this, p.name, p.inputs, p.outputs, p.processingTime, p.description);
+    return await AppDataStore.submitProcessor(p.name, p.inputs, p.outputs, p.processingTime, p.description);
   }
-  async removeProcessor(name){ return await AppDataStore.deleteProcessor(this, name); }
   findProcessorsByInputs(availableInputs,allowPartial=true){
     const res={exactMatches:[],partialMatches:[],possibleOutputs:new Set(),secondaryProcessors:[]};
     this.processors.forEach((p,name)=>{
@@ -98,14 +97,12 @@ async function addProcessor(){
   if(outputs.length===0){ showMessage('At least one output is required.','error'); return; }
   try{
     const result = await system.addProcessor(name, inputs, outputs, processingTime, description);
-    if(result === null){ showMessage('Add cancelled (existing processor not replaced).','error'); return; }
     document.getElementById('processor-name').value = '';
     document.getElementById('processor-inputs').value = '';
     document.getElementById('processor-outputs').value = '';
     document.getElementById('processing-time').value = '';
     document.getElementById('processor-description').value = '';
-    showMessage('Successfully added processor: ' + name, 'success');
-    if (document.getElementById('processors-tab').classList.contains('active')) { displayAllProcessors(); }
+    showMessage(`Processor "${result.name}" submitted for admin approval.`, 'success');
   }catch(e){ showMessage('Error adding processor: ' + e.message, 'error'); }
 }
 
@@ -123,11 +120,10 @@ function displayDiscoveryResults(results){ const el=document.getElementById('dis
 function displayOptimalChain(results){ const el=document.getElementById('discovery-results'); let html='<div class="results-container"><h4>Optimal Production Chain</h4>'; if(results.exactMatches.length>0){ const scored=results.exactMatches.map(m=>{ let s=0; m.data.outputs.forEach(o=>{ if(system.inputToProcessors.has(o)){ s+=system.inputToProcessors.get(o).size; } }); return {...m,score:s}; }).sort((a,b)=>b.score-a.score); const best=scored[0]; html+='<div class="chain-visualization">'; html+=`<div class="chain-step"><div class="chain-item"><b>Available Inputs</b><div>${selectedInputs.map(esc).join(', ')}</div></div><div class="chain-arrow">-></div><div class="chain-item"><b>${esc(best.processor)}</b><div>${esc(best.data.processingTime||'Varies')}</div></div><div class="chain-arrow">-></div><div class="chain-item"><b>Outputs</b><div>${best.data.outputs.map(esc).join(', ')}</div></div></div>`; html+='</div>'; } else { html+='<p>No optimal chain found for current inputs.</p>'; } html+='</div>'; el.innerHTML=html; }
 
 // ===== Processors table =====
-function displayAllProcessors(){ const c=document.getElementById('processors-list'); const list=system.getAllProcessors(); if(list.length===0){ c.innerHTML='<p>No processors found. If the Supabase table has rows, wait a moment for the page to finish loading and try the tab again.</p>'; return; } let h=`<table class="data-table"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; list.forEach(p=>{ h+=`<tr><td><strong>${esc(p.name)}</strong><br/><small>${esc(p.description||'-')}</small></td><td>${p.inputs.map(esc).join(', ')}</td><td>${p.outputs.map(esc).join(', ')}</td><td>${esc(p.processingTime||'N/A')}</td><td><button class="btn btn-small btn-warning" onclick="useAsTemplate('${p.name.replace(/'/g,"\\'")}')">Template</button> <button class="btn btn-small btn-danger" onclick="removeProcessorUI('${p.name.replace(/'/g,"\\'")}')">Remove</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
-function filterProcessors(){ const f=document.getElementById('processor-filter').value.trim(); if(!f){ displayAllProcessors(); return; } const r=system.searchProcessors(f); const c=document.getElementById('processors-list'); if(r.length===0){ c.innerHTML='<p>No processors found.</p>'; return; } let h=`<table class="data-table"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; r.forEach(x=>{ h+=`<tr><td><strong>${x.highlights.name}</strong><br/><small>${x.highlights.description||'-'}</small></td><td>${x.highlights.inputs.join(', ')}</td><td>${x.highlights.outputs.join(', ')}</td><td>${esc(x.data.processingTime||'N/A')}</td><td><button class="btn btn-small btn-warning" onclick="useAsTemplate('${x.name.replace(/'/g,"\\'")}')">Template</button> <button class="btn btn-small btn-danger" onclick="removeProcessorUI('${x.name.replace(/'/g,"\\'")}')">Remove</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
+function displayAllProcessors(){ const c=document.getElementById('processors-list'); const list=system.getAllProcessors(); if(list.length===0){ c.innerHTML='<p>No approved processors found. If the Supabase table has rows, wait a moment for the page to finish loading and try the tab again.</p>'; return; } let h=`<table class="data-table"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; list.forEach(p=>{ h+=`<tr><td><strong>${esc(p.name)}</strong><br/><small>${esc(p.description||'-')}</small></td><td>${p.inputs.map(esc).join(', ')}</td><td>${p.outputs.map(esc).join(', ')}</td><td>${esc(p.processingTime||'N/A')}</td><td><button class="btn btn-small btn-warning" onclick="useAsTemplate('${p.name.replace(/'/g,"\\'")}')">Template</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
+function filterProcessors(){ const f=document.getElementById('processor-filter').value.trim(); if(!f){ displayAllProcessors(); return; } const r=system.searchProcessors(f); const c=document.getElementById('processors-list'); if(r.length===0){ c.innerHTML='<p>No approved processors found.</p>'; return; } let h=`<table class="data-table"><thead><tr><th>Processor</th><th>Inputs</th><th>Outputs</th><th>Time</th><th>Actions</th></tr></thead><tbody>`; r.forEach(x=>{ h+=`<tr><td><strong>${x.highlights.name}</strong><br/><small>${x.highlights.description||'-'}</small></td><td>${x.highlights.inputs.join(', ')}</td><td>${x.highlights.outputs.join(', ')}</td><td>${esc(x.data.processingTime||'N/A')}</td><td><button class="btn btn-small btn-warning" onclick="useAsTemplate('${x.name.replace(/'/g,"\\'")}')">Template</button></td></tr>`; }); c.innerHTML=h+'</tbody></table>'; }
 function clearFilter(){ document.getElementById('processor-filter').value=''; displayAllProcessors(); }
 function useAsTemplate(name){ const p=system.processors.get(name); if(p){ document.getElementById('processor-name').value=p.name+' (Copy)'; document.getElementById('processor-inputs').value=p.inputs.join(', '); document.getElementById('processor-outputs').value=p.outputs.join(', '); document.getElementById('processing-time').value=p.processingTime; document.getElementById('processor-description').value=p.description; showTab('discovery', document.querySelector('.tab:nth-child(1)')); showMessage('Template loaded. Edit then click Add Processor.','success'); } }
-async function removeProcessorUI(name){ if(confirm(`Remove "${name}"?`)){ try{ if(await system.removeProcessor(name)){ showMessage('Removed from Supabase.','success'); displayAllProcessors(); } else { showMessage('Could not remove.','error'); } }catch(e){ showMessage('Could not remove: ' + e.message,'error'); } } }
 
 // ===== Chains =====
 function visualizeChain(){ const start=document.getElementById('chain-start').value; if(!start){ showMessage('Please select a starting input.','error'); return; } const chains=system.findProductionChain(start,3); displayChainVisualization(chains,start); }
