@@ -9,6 +9,11 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("GRAMEEE_SERVICE_ROLE_KEY") ?? "";
+const gmailClientId = Deno.env.get("GMAIL_CLIENT_ID") ?? "";
+const gmailClientSecret = Deno.env.get("GMAIL_CLIENT_SECRET") ?? "";
+const gmailRefreshToken = Deno.env.get("GMAIL_REFRESH_TOKEN") ?? "";
+const gmailSenderEmail = Deno.env.get("GMAIL_SENDER_EMAIL") ?? "";
+const gmailNotifyRecipient = Deno.env.get("GMAIL_NOTIFY_RECIPIENT") ?? "";
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: {
@@ -47,6 +52,83 @@ function generateToken() {
   return Array.from(bytes)
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function toBase64Url(input: string) {
+  return btoa(input)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+async function getGmailAccessToken() {
+  if (!gmailClientId || !gmailClientSecret || !gmailRefreshToken) {
+    throw new Error("Gmail secrets are not configured.");
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: gmailClientId,
+      client_secret: gmailClientSecret,
+      refresh_token: gmailRefreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.access_token) {
+    throw new Error(data?.error_description || data?.error || "Could not refresh Gmail access token.");
+  }
+
+  return String(data.access_token);
+}
+
+async function sendProcessorNotification(processorName: string) {
+  if (!gmailSenderEmail || !gmailNotifyRecipient) {
+    throw new Error("Gmail sender or recipient is not configured.");
+  }
+
+  const accessToken = await getGmailAccessToken();
+  const subject = "New Processor Added, please validate";
+  const bodyLines = [
+    "New Processor Added, please validate",
+    "",
+    `Processor: ${processorName || "Unnamed Processor"}`,
+    `Submitted At: ${new Date().toISOString()}`,
+  ];
+
+  const rawMessage = [
+    `From: ${gmailSenderEmail}`,
+    `To: ${gmailNotifyRecipient}`,
+    `Subject: ${subject}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    bodyLines.join("\n"),
+  ].join("\r\n");
+
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      raw: toBase64Url(rawMessage),
+    }),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || "Gmail notification could not be sent.");
+  }
+
+  return data;
 }
 
 async function validateSession(token: string) {
@@ -335,6 +417,16 @@ async function handleDeleteProcessor(token: string, processorId: string) {
   return jsonResponse({ ok: true });
 }
 
+async function handleNotifyNewProcessor(processorName: string) {
+  try {
+    await sendProcessorNotification(processorName);
+    return jsonResponse({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Processor notification failed.";
+    return errorResponse(message, 500);
+  }
+}
+
 async function handleChangePassword(token: string, currentPassword: string, newPassword: string) {
   const session = await validateSession(token);
 
@@ -415,6 +507,7 @@ Deno.serve(async (request) => {
   const newPassword = requireString(body.newPassword);
   const toolId = requireString(body.toolId);
   const processorId = requireString(body.processorId);
+  const processorName = requireString(body.processorName);
 
   switch (action) {
     case "login":
@@ -431,6 +524,8 @@ Deno.serve(async (request) => {
       return await handleRejectProcessor(token, processorId);
     case "deleteProcessor":
       return await handleDeleteProcessor(token, processorId);
+    case "notifyNewProcessor":
+      return await handleNotifyNewProcessor(processorName);
     case "listPending":
       return await handleListPending(token);
     case "listAll":

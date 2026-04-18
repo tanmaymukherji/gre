@@ -1,5 +1,7 @@
 const AppDataStore = (() => {
   const TABLE = () => (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_TABLE) || 'processors';
+  const ADMIN_API_URL = () => `${String(window.APP_CONFIG?.SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1/grameee-admin`;
+  const ADMIN_API_KEY = () => String(window.APP_CONFIG?.SUPABASE_ANON_KEY || '');
   let client = null;
 
   function getClient(){
@@ -31,6 +33,30 @@ const AppDataStore = (() => {
 
   function fromRow(row){
     return normalizeProcessor(row.name, row.inputs || [], row.outputs || [], row.processing_time || '', row.description || '');
+  }
+
+  async function notifyNewProcessor(processor){
+    const response = await fetch(ADMIN_API_URL(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: ADMIN_API_KEY(),
+        Authorization: `Bearer ${ADMIN_API_KEY()}`
+      },
+      body: JSON.stringify({
+        action: 'notifyNewProcessor',
+        processorName: processor.name
+      })
+    });
+    if(!response.ok){
+      let data = null;
+      try{
+        data = await response.json();
+      }catch{
+        data = null;
+      }
+      throw new Error(data?.error || 'Processor notification failed');
+    }
   }
 
   function rebuildMaps(system, processors){
@@ -70,6 +96,11 @@ const AppDataStore = (() => {
     if(error){
       if(error.code === '23505') throw new Error('A processor with this name already exists or is already waiting for approval');
       throw new Error('Supabase write failed: ' + error.message);
+    }
+    try{
+      await notifyNewProcessor(processor);
+    }catch(err){
+      console.error(err);
     }
     return processor;
   }
