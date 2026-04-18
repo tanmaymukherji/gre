@@ -66,12 +66,12 @@ const AppDataStore = (() => {
       approved_at: null,
       approved_by: null
     };
-    const { data, error } = await getClient().from(TABLE()).insert(payload).select('id, name, inputs, outputs, processing_time, description, status').single();
+    const { error } = await getClient().from(TABLE()).insert(payload);
     if(error){
       if(error.code === '23505') throw new Error('A processor with this name already exists or is already waiting for approval');
       throw new Error('Supabase write failed: ' + error.message);
     }
-    return fromRow(data);
+    return processor;
   }
 
   return { loadProcessors, submitProcessor };
