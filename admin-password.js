@@ -3,6 +3,7 @@ const changePasswordStatus = document.getElementById('changePasswordStatus');
 
 const ADMIN_SESSION_KEY = 'gre-admin-session';
 const ADMIN_API_URL = `${String(window.APP_CONFIG?.SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1/grameee-admin`;
+const ADMIN_API_KEY = String(window.APP_CONFIG?.SUPABASE_ANON_KEY || '');
 
 function normalizeText(value) {
   return (value || '').trim();
@@ -20,7 +21,11 @@ function getStoredToken() {
 async function adminRequest(action, payload = {}) {
   const response = await fetch(ADMIN_API_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: ADMIN_API_KEY,
+      Authorization: `Bearer ${ADMIN_API_KEY}`
+    },
     body: JSON.stringify({ action, ...payload })
   });
   let data = null;
