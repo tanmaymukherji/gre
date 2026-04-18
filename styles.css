@@ -3,9 +3,6 @@ body{font-family:'Segoe UI',Tahoma,Verdana,sans-serif;background:linear-gradient
 .container{max-width:1400px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.1);overflow:hidden}
 .header{background:linear-gradient(135deg,#2c3e50,#3498db);color:#fff;padding:2rem;text-align:center}
 .header h1{font-size:2.2rem;margin-bottom:.25rem}
-.header-link-row{margin-top:.75rem}
-.header-link{display:inline-flex;align-items:center;padding:.45rem .9rem;border:1px solid rgba(255,255,255,.35);border-radius:999px;color:#fff;text-decoration:none;background:rgba(255,255,255,.12)}
-.header-link:hover{background:rgba(255,255,255,.2)}
 .main-content{display:grid;grid-template-columns:1fr 2fr;min-height:80vh}
 .sidebar{background:#f8f9fa;padding:2rem;border-right:1px solid #e9ecef}
 .content-area{padding:2rem}
@@ -53,6 +50,8 @@ body{font-family:'Segoe UI',Tahoma,Verdana,sans-serif;background:linear-gradient
 .data-persistence{background:#fff3cd;border:1px solid #ffeaa7;color:#856404;padding:.6rem;border-radius:8px;margin-bottom:.6rem}
 .hidden{display:none}
 details summary{cursor:pointer}
+.admin-fab{position:fixed;right:20px;bottom:20px;z-index:50;display:inline-flex;align-items:center;justify-content:center;min-width:88px;padding:.7rem 1rem;border-radius:999px;background:linear-gradient(135deg,#2c3e50,#3498db);color:#fff;text-decoration:none;font-weight:700;box-shadow:0 12px 24px rgba(0,0,0,.2)}
+.admin-fab:hover{transform:translateY(-1px);box-shadow:0 16px 28px rgba(0,0,0,.24)}
 .admin-body{background:linear-gradient(135deg,#1f4b6e 0%,#173148 100%);padding:28px}
 .admin-shell{max-width:1200px;margin:0 auto}
 .admin-shell-narrow{max-width:760px}
@@ -75,4 +74,4 @@ details summary{cursor:pointer}
 .admin-badge{display:inline-flex;align-items:center;border-radius:999px;padding:.3rem .75rem;background:#ffe7b8;color:#8a5a00;font-size:.82rem;font-weight:700;text-transform:capitalize}
 .admin-badge.approved{background:#d9f4df;color:#1f5f3a}
 .auth-loading .queue-panel,.auth-loading .admin-panel{visibility:hidden}
-@media (max-width:700px){.admin-body{padding:16px}.admin-header h1{font-size:1.6rem}}
+@media (max-width:700px){.admin-body{padding:16px}.admin-header h1{font-size:1.6rem}.admin-fab{right:14px;bottom:14px;min-width:76px;padding:.65rem .9rem}}
