@@ -59,7 +59,7 @@ details summary{cursor:pointer}
 .admin-header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;color:#fff;margin-bottom:1.25rem;flex-wrap:wrap}
 .admin-kicker{text-transform:uppercase;letter-spacing:.08em;font-size:.8rem;opacity:.8;margin-bottom:.35rem}
 .admin-header h1{font-size:2rem}
-.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;max-width:1200px;margin:0 auto}
+.admin-grid{display:grid;grid-template-columns:1fr;gap:1rem;max-width:1200px;margin:0 auto}
 .admin-panel{min-height:100%}
 .admin-form{display:grid;gap:.5rem}
 .admin-status,.admin-helper{margin-top:.6rem;line-height:1.6}
@@ -67,7 +67,7 @@ details summary{cursor:pointer}
 .admin-status.error{color:#a22828}
 .session-panel,.queue-panel{display:none}
 .session-panel.active,.queue-panel.active{display:block}
-.admin-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.85rem;margin-top:.9rem}
+.admin-card-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem;margin-top:.9rem}
 .admin-card{background:#f8f9fa;border:1px solid #dfe4ea;border-radius:12px;padding:1rem}
 .admin-card h4{margin-bottom:.45rem;color:#22313f}
 .admin-card p{margin-bottom:.45rem;color:#536171;line-height:1.5}
@@ -75,4 +75,5 @@ details summary{cursor:pointer}
 .admin-badge{display:inline-flex;align-items:center;border-radius:999px;padding:.3rem .75rem;background:#ffe7b8;color:#8a5a00;font-size:.82rem;font-weight:700;text-transform:capitalize}
 .admin-badge.approved{background:#d9f4df;color:#1f5f3a}
 .auth-loading .queue-panel,.auth-loading .admin-panel{visibility:hidden}
-@media (max-width:700px){.admin-body{padding:16px}.admin-header h1{font-size:1.6rem}.page-footer-link{padding:0 16px 16px;justify-content:center}.admin-fab{padding:.5rem .75rem;font-size:.78rem}}
+@media (max-width:980px){.admin-card-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.admin-body{padding:16px}.admin-header h1{font-size:1.6rem}.page-footer-link{padding:0 16px 16px;justify-content:center}.admin-fab{padding:.5rem .75rem;font-size:.78rem}.admin-card-list{grid-template-columns:1fr}}
