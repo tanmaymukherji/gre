@@ -67,7 +67,7 @@ details summary{cursor:pointer}
 .admin-status.error{color:#a22828}
 .session-panel,.queue-panel{display:none}
 .session-panel.active,.queue-panel.active{display:block}
-.admin-card-list{display:grid;gap:.85rem;margin-top:.9rem}
+.admin-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.85rem;margin-top:.9rem}
 .admin-card{background:#f8f9fa;border:1px solid #dfe4ea;border-radius:12px;padding:1rem}
 .admin-card h4{margin-bottom:.45rem;color:#22313f}
 .admin-card p{margin-bottom:.45rem;color:#536171;line-height:1.5}
