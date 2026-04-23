@@ -59,6 +59,43 @@
     </main>
   </div>
 
+  <div class="admin-modal hidden" id="editProcessorModal">
+    <div class="admin-modal-backdrop" data-close-edit></div>
+    <div class="admin-modal-dialog">
+      <div class="admin-card-header">
+        <h3>Edit Processor</h3>
+        <button class="btn btn-small btn-danger" type="button" data-close-edit>Close</button>
+      </div>
+      <form class="admin-form" id="editProcessorForm">
+        <input id="editProcessorId" type="hidden" />
+        <div class="form-group">
+          <label for="editProcessorName">Processor Name</label>
+          <input id="editProcessorName" required />
+        </div>
+        <div class="form-group">
+          <label for="editProcessorInputs">Inputs (comma-separated)</label>
+          <textarea id="editProcessorInputs" rows="3" required></textarea>
+        </div>
+        <div class="form-group">
+          <label for="editProcessorOutputs">Outputs (comma-separated)</label>
+          <textarea id="editProcessorOutputs" rows="3" required></textarea>
+        </div>
+        <div class="form-group">
+          <label for="editProcessorTime">Processing Time</label>
+          <input id="editProcessorTime" />
+        </div>
+        <div class="form-group">
+          <label for="editProcessorDescription">Description</label>
+          <textarea id="editProcessorDescription" rows="3"></textarea>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-success" type="submit">Save Changes</button>
+        </div>
+        <p class="admin-status" id="editProcessorStatus"></p>
+      </form>
+    </div>
+  </div>
+
   <script src="./admin-tools.js"></script>
 </body>
 </html>

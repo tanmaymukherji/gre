@@ -75,5 +75,9 @@ details summary{cursor:pointer}
 .admin-badge{display:inline-flex;align-items:center;border-radius:999px;padding:.3rem .75rem;background:#ffe7b8;color:#8a5a00;font-size:.82rem;font-weight:700;text-transform:capitalize}
 .admin-badge.approved{background:#d9f4df;color:#1f5f3a}
 .auth-loading .queue-panel,.auth-loading .admin-panel{visibility:hidden}
+.admin-modal{position:fixed;inset:0;z-index:100}
+.admin-modal.hidden{display:none}
+.admin-modal-backdrop{position:absolute;inset:0;background:rgba(8,15,24,.55)}
+.admin-modal-dialog{position:relative;max-width:720px;margin:40px auto;padding:1.2rem;border-radius:16px;background:#fff;box-shadow:0 24px 60px rgba(0,0,0,.22);z-index:1}
 @media (max-width:980px){.admin-card-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:700px){.admin-body{padding:16px}.admin-header h1{font-size:1.6rem}.page-footer-link{padding:0 16px 16px;justify-content:center}.admin-fab{padding:.5rem .75rem;font-size:.78rem}.admin-card-list{grid-template-columns:1fr}}
+@media (max-width:700px){.admin-body{padding:16px}.admin-header h1{font-size:1.6rem}.page-footer-link{padding:0 16px 16px;justify-content:center}.admin-fab{padding:.5rem .75rem;font-size:.78rem}.admin-card-list{grid-template-columns:1fr}.admin-modal-dialog{margin:16px;padding:1rem}}

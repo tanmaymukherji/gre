@@ -10,10 +10,20 @@ const queuePanel = document.getElementById('queuePanel');
 const allProcessorsPanel = document.getElementById('allProcessorsPanel');
 const signOutButton = document.getElementById('signOutButton');
 const refreshQueueButton = document.getElementById('refreshQueue');
+const editProcessorModal = document.getElementById('editProcessorModal');
+const editProcessorForm = document.getElementById('editProcessorForm');
+const editProcessorStatus = document.getElementById('editProcessorStatus');
+const editProcessorId = document.getElementById('editProcessorId');
+const editProcessorName = document.getElementById('editProcessorName');
+const editProcessorInputs = document.getElementById('editProcessorInputs');
+const editProcessorOutputs = document.getElementById('editProcessorOutputs');
+const editProcessorTime = document.getElementById('editProcessorTime');
+const editProcessorDescription = document.getElementById('editProcessorDescription');
 
 const ADMIN_SESSION_KEY = 'gre-admin-session';
 const ADMIN_API_URL = `${String(window.APP_CONFIG?.SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1/grameee-admin`;
 const ADMIN_API_KEY = String(window.APP_CONFIG?.SUPABASE_ANON_KEY || '');
+let processorCache = new Map();
 
 function normalizeText(value) {
   return (value || '').trim();
@@ -99,6 +109,7 @@ function renderQueue(items) {
       <p><strong>Submitted By:</strong> ${escapeHtml(item.submitted_by || 'Anonymous')}</p>
       <p><strong>Submitted:</strong> ${escapeHtml(formatDate(item.created_at))}</p>
       <div class="btn-group">
+        <button class="btn btn-warning btn-small" type="button" data-edit-processor="${item.id}">Edit</button>
         <button class="btn btn-success btn-small" type="button" data-approve="${item.id}">Approve</button>
         <button class="btn btn-danger btn-small" type="button" data-reject="${item.id}">Reject</button>
       </div>
@@ -125,8 +136,10 @@ function renderAllProcessors(items) {
       <p><strong>Inputs:</strong> ${escapeHtml((item.inputs || []).join(', '))}</p>
       <p><strong>Outputs:</strong> ${escapeHtml((item.outputs || []).join(', '))}</p>
       <p><strong>Processing Time:</strong> ${escapeHtml(item.processing_time || 'N/A')}</p>
+      <p><strong>Description:</strong> ${escapeHtml(item.description || 'No description provided.')}</p>
       <p><strong>Updated:</strong> ${escapeHtml(formatDate(item.updated_at || item.created_at))}</p>
       <div class="btn-group">
+        <button class="btn btn-warning btn-small" type="button" data-edit-processor="${item.id}">Edit</button>
         <button class="btn btn-danger btn-small" type="button" data-delete-processor="${item.id}">Delete</button>
       </div>
     `;
@@ -169,6 +182,7 @@ async function loadPendingQueue() {
   try {
     const data = await adminRequest('listPendingProcessors', { token });
     const items = Array.isArray(data?.items) ? data.items : [];
+    items.forEach((item) => processorCache.set(item.id, item));
     queueMeta.textContent = `${items.length} pending submission${items.length === 1 ? '' : 's'} in the queue`;
     renderQueue(items);
   } catch (error) {
@@ -187,6 +201,7 @@ async function loadAllProcessors() {
   try {
     const data = await adminRequest('listAllProcessors', { token });
     const items = Array.isArray(data?.items) ? data.items : [];
+    processorCache = new Map(items.map((item) => [item.id, item]));
     allProcessorsMeta.textContent = `${items.length} processor record${items.length === 1 ? '' : 's'} found`;
     renderAllProcessors(items);
   } catch (error) {
@@ -227,16 +242,85 @@ async function deleteProcessor(id) {
   }
 }
 
+function openEditProcessor(id) {
+  const processor = processorCache.get(id);
+  if (!processor) {
+    setStatus(sessionStatus, 'Processor details could not be loaded.', true);
+    return;
+  }
+  editProcessorId.value = processor.id;
+  editProcessorName.value = processor.name || '';
+  editProcessorInputs.value = (processor.inputs || []).join(', ');
+  editProcessorOutputs.value = (processor.outputs || []).join(', ');
+  editProcessorTime.value = processor.processing_time || '';
+  editProcessorDescription.value = processor.description || '';
+  setStatus(editProcessorStatus, '');
+  editProcessorModal.classList.remove('hidden');
+}
+
+function closeEditProcessor() {
+  editProcessorForm.reset();
+  editProcessorId.value = '';
+  setStatus(editProcessorStatus, '');
+  editProcessorModal.classList.add('hidden');
+}
+
+async function updateProcessor() {
+  const processorId = normalizeText(editProcessorId.value);
+  const name = normalizeText(editProcessorName.value);
+  const inputs = editProcessorInputs.value.split(',').map((item) => item.trim()).filter(Boolean);
+  const outputs = editProcessorOutputs.value.split(',').map((item) => item.trim()).filter(Boolean);
+  const processingTime = normalizeText(editProcessorTime.value);
+  const description = normalizeText(editProcessorDescription.value);
+
+  if (!processorId || !name || !inputs.length || !outputs.length) {
+    setStatus(editProcessorStatus, 'Name, inputs, and outputs are required.', true);
+    return;
+  }
+
+  setStatus(editProcessorStatus, 'Saving changes...');
+  try {
+    await adminRequest('updateProcessor', {
+      token: getStoredToken(),
+      processorId,
+      name,
+      inputs,
+      outputs,
+      processingTime,
+      description
+    });
+    setStatus(sessionStatus, 'Processor updated successfully.');
+    closeEditProcessor();
+    await loadPendingQueue();
+    await loadAllProcessors();
+  } catch (error) {
+    setStatus(editProcessorStatus, error.message || 'Processor could not be updated.', true);
+  }
+}
+
 queueList.addEventListener('click', async (event) => {
+  const editId = event.target.closest('[data-edit-processor]')?.dataset.editProcessor;
   const approveId = event.target.closest('[data-approve]')?.dataset.approve;
   const rejectId = event.target.closest('[data-reject]')?.dataset.reject;
+  if (editId) openEditProcessor(editId);
   if (approveId) await approveProcessor(approveId);
   if (rejectId) await rejectProcessor(rejectId);
 });
 
 allProcessorsList.addEventListener('click', async (event) => {
+  const editId = event.target.closest('[data-edit-processor]')?.dataset.editProcessor;
   const deleteId = event.target.closest('[data-delete-processor]')?.dataset.deleteProcessor;
+  if (editId) openEditProcessor(editId);
   if (deleteId) await deleteProcessor(deleteId);
+});
+
+editProcessorModal.addEventListener('click', (event) => {
+  if (event.target.closest('[data-close-edit]')) closeEditProcessor();
+});
+
+editProcessorForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await updateProcessor();
 });
 
 loginForm.addEventListener('submit', async (event) => {
@@ -276,6 +360,7 @@ signOutButton.addEventListener('click', async () => {
   allProcessorsList.innerHTML = '';
   setStatus(sessionStatus, '');
   setStatus(loginStatus, '');
+  closeEditProcessor();
 });
 
 refreshQueueButton.addEventListener('click', async () => {

@@ -1,5 +1,4 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import bcrypt from "npm:bcryptjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -157,6 +156,31 @@ async function validateSession(token: string) {
   return data;
 }
 
+async function verifyAdminPassword(username: string, password: string) {
+  const { data, error } = await supabase.rpc("grameee_admin_password_matches", {
+    p_username: username,
+    p_password: password,
+  });
+
+  if (error) {
+    throw new Error(`Admin password verification failed: ${error.message}`);
+  }
+
+  return Boolean(data);
+}
+
+async function createAdminPasswordHash(password: string) {
+  const { data, error } = await supabase.rpc("grameee_hash_admin_password", {
+    p_password: password,
+  });
+
+  if (error || typeof data !== "string" || !data) {
+    throw new Error(error?.message || "Admin password hash could not be generated.");
+  }
+
+  return data;
+}
+
 async function handleLogin(password: string) {
   const { data, error } = await supabase
     .from("grameee_admin_accounts")
@@ -176,7 +200,14 @@ async function handleLogin(password: string) {
     return errorResponse("Admin password has not been initialized yet.", 401);
   }
 
-  const validPassword = await bcrypt.compare(password, data.password_hash);
+  let validPassword = false;
+
+  try {
+    validPassword = await verifyAdminPassword("admin", password);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Admin password verification failed.";
+    return errorResponse(message, 500);
+  }
 
   if (!validPassword) {
     return errorResponse("Invalid admin password.", 401);
@@ -354,6 +385,42 @@ async function handleDeleteTool(token: string, toolId: string) {
   return jsonResponse({ ok: true });
 }
 
+async function handleUpdateTool(
+  token: string,
+  toolId: string,
+  name: string,
+  url: string,
+  category: string,
+  description: string,
+) {
+  const session = await validateSession(token);
+
+  if (!session) {
+    return errorResponse("Invalid admin session.", 401);
+  }
+
+  if (!toolId || !name || !url) {
+    return errorResponse("Tool id, name, and URL are required.", 400);
+  }
+
+  const { error } = await supabase
+    .from("grameee_tools")
+    .update({
+      name,
+      url,
+      category: category || null,
+      description: description || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", toolId);
+
+  if (error) {
+    return errorResponse("Tool could not be updated.", 500);
+  }
+
+  return jsonResponse({ ok: true });
+}
+
 async function handleApproveProcessor(token: string, processorId: string) {
   const session = await validateSession(token);
 
@@ -417,6 +484,47 @@ async function handleDeleteProcessor(token: string, processorId: string) {
   return jsonResponse({ ok: true });
 }
 
+async function handleUpdateProcessor(
+  token: string,
+  processorId: string,
+  name: string,
+  inputs: string[],
+  outputs: string[],
+  processingTime: string,
+  description: string,
+) {
+  const session = await validateSession(token);
+
+  if (!session) {
+    return errorResponse("Invalid admin session.", 401);
+  }
+
+  const cleanedInputs = inputs.map((item) => item.trim()).filter(Boolean);
+  const cleanedOutputs = outputs.map((item) => item.trim()).filter(Boolean);
+
+  if (!processorId || !name || !cleanedInputs.length || !cleanedOutputs.length) {
+    return errorResponse("Processor id, name, inputs, and outputs are required.", 400);
+  }
+
+  const { error } = await supabase
+    .from("processors")
+    .update({
+      name,
+      inputs: cleanedInputs,
+      outputs: cleanedOutputs,
+      processing_time: processingTime || null,
+      description: description || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", processorId);
+
+  if (error) {
+    return errorResponse(`Processor could not be updated: ${error.message}`, 500);
+  }
+
+  return jsonResponse({ ok: true });
+}
+
 async function handleNotifyNewProcessor(processorName: string) {
   try {
     await sendProcessorNotification(processorName);
@@ -448,13 +556,27 @@ async function handleChangePassword(token: string, currentPassword: string, newP
     return errorResponse("Current admin password could not be verified.", 400);
   }
 
-  const validPassword = await bcrypt.compare(currentPassword, data.password_hash);
+  let validPassword = false;
+
+  try {
+    validPassword = await verifyAdminPassword(session.username, currentPassword);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Current admin password could not be verified.";
+    return errorResponse(message, 500);
+  }
 
   if (!validPassword) {
     return errorResponse("Current password is incorrect.", 401);
   }
 
-  const nextHash = await bcrypt.hash(newPassword, 10);
+  let nextHash = "";
+
+  try {
+    nextHash = await createAdminPasswordHash(newPassword);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Admin password hash could not be generated.";
+    return errorResponse(message, 500);
+  }
 
   const { error: updateError } = await supabase
     .from("grameee_admin_accounts")
@@ -506,8 +628,15 @@ Deno.serve(async (request) => {
   const currentPassword = requireString(body.currentPassword);
   const newPassword = requireString(body.newPassword);
   const toolId = requireString(body.toolId);
+  const name = requireString(body.name);
+  const url = requireString(body.url);
+  const category = requireString(body.category);
+  const description = requireString(body.description);
   const processorId = requireString(body.processorId);
   const processorName = requireString(body.processorName);
+  const inputs = Array.isArray(body.inputs) ? body.inputs.filter((item): item is string => typeof item === "string") : [];
+  const outputs = Array.isArray(body.outputs) ? body.outputs.filter((item): item is string => typeof item === "string") : [];
+  const processingTime = requireString(body.processingTime);
 
   switch (action) {
     case "login":
@@ -524,6 +653,8 @@ Deno.serve(async (request) => {
       return await handleRejectProcessor(token, processorId);
     case "deleteProcessor":
       return await handleDeleteProcessor(token, processorId);
+    case "updateProcessor":
+      return await handleUpdateProcessor(token, processorId, name, inputs, outputs, processingTime, description);
     case "notifyNewProcessor":
       return await handleNotifyNewProcessor(processorName);
     case "listPending":
@@ -536,6 +667,8 @@ Deno.serve(async (request) => {
       return await handleReject(token, toolId);
     case "deleteTool":
       return await handleDeleteTool(token, toolId);
+    case "updateTool":
+      return await handleUpdateTool(token, toolId, name, url, category, description);
     case "changePassword":
       return await handleChangePassword(token, currentPassword, newPassword);
     case "logout":
