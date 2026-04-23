@@ -10,6 +10,8 @@ const queuePanel = document.getElementById('queuePanel');
 const allProcessorsPanel = document.getElementById('allProcessorsPanel');
 const signOutButton = document.getElementById('signOutButton');
 const refreshQueueButton = document.getElementById('refreshQueue');
+const queueSearch = document.getElementById('queueSearch');
+const allProcessorsSearch = document.getElementById('allProcessorsSearch');
 const editProcessorModal = document.getElementById('editProcessorModal');
 const editProcessorForm = document.getElementById('editProcessorForm');
 const editProcessorStatus = document.getElementById('editProcessorStatus');
@@ -24,6 +26,8 @@ const ADMIN_SESSION_KEY = 'gre-admin-session';
 const ADMIN_API_URL = `${String(window.APP_CONFIG?.SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1/grameee-admin`;
 const ADMIN_API_KEY = String(window.APP_CONFIG?.SUPABASE_ANON_KEY || '');
 let processorCache = new Map();
+let pendingProcessors = [];
+let allProcessors = [];
 
 function normalizeText(value) {
   return (value || '').trim();
@@ -46,6 +50,23 @@ function escapeHtml(value) {
 function formatDate(value) {
   if (!value) return 'Unknown date';
   return new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function matchesProcessorSearch(item, query) {
+  const haystack = [
+    item.name,
+    ...(item.inputs || []),
+    ...(item.outputs || []),
+    item.description,
+    item.processing_time,
+    item.status,
+    item.submitted_by
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(query.toLowerCase());
 }
 
 function getStoredToken() {
@@ -182,9 +203,10 @@ async function loadPendingQueue() {
   try {
     const data = await adminRequest('listPendingProcessors', { token });
     const items = Array.isArray(data?.items) ? data.items : [];
+    pendingProcessors = items;
     items.forEach((item) => processorCache.set(item.id, item));
     queueMeta.textContent = `${items.length} pending submission${items.length === 1 ? '' : 's'} in the queue`;
-    renderQueue(items);
+    renderQueue(items.filter((item) => matchesProcessorSearch(item, normalizeText(queueSearch.value || ''))));
   } catch (error) {
     queueMeta.textContent = error.message || 'Pending submissions could not be loaded.';
   }
@@ -201,9 +223,10 @@ async function loadAllProcessors() {
   try {
     const data = await adminRequest('listAllProcessors', { token });
     const items = Array.isArray(data?.items) ? data.items : [];
+    allProcessors = items;
     processorCache = new Map(items.map((item) => [item.id, item]));
     allProcessorsMeta.textContent = `${items.length} processor record${items.length === 1 ? '' : 's'} found`;
-    renderAllProcessors(items);
+    renderAllProcessors(items.filter((item) => matchesProcessorSearch(item, normalizeText(allProcessorsSearch.value || ''))));
   } catch (error) {
     allProcessorsMeta.textContent = error.message || 'Processor records could not be loaded.';
   }
@@ -321,6 +344,14 @@ editProcessorModal.addEventListener('click', (event) => {
 editProcessorForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   await updateProcessor();
+});
+
+queueSearch.addEventListener('input', () => {
+  renderQueue(pendingProcessors.filter((item) => matchesProcessorSearch(item, normalizeText(queueSearch.value))));
+});
+
+allProcessorsSearch.addEventListener('input', () => {
+  renderAllProcessors(allProcessors.filter((item) => matchesProcessorSearch(item, normalizeText(allProcessorsSearch.value))));
 });
 
 loginForm.addEventListener('submit', async (event) => {

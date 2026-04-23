@@ -48,12 +48,20 @@
       <section class="section admin-panel queue-panel" id="queuePanel">
         <h3>Pending Processor Queue</h3>
         <p class="admin-helper" id="queueMeta">Sign in as admin to load pending submissions.</p>
+        <div class="form-group">
+          <label for="queueSearch">Search Pending Processors</label>
+          <input id="queueSearch" type="search" placeholder="Search by name, input, output, description..." />
+        </div>
         <div class="admin-card-list" id="queueList"></div>
       </section>
 
       <section class="section admin-panel queue-panel" id="allProcessorsPanel">
         <h3>All Processor Records</h3>
         <p class="admin-helper" id="allProcessorsMeta">Sign in as admin to load all processors.</p>
+        <div class="form-group">
+          <label for="allProcessorsSearch">Search All Processors</label>
+          <input id="allProcessorsSearch" type="search" placeholder="Search by name, input, output, description..." />
+        </div>
         <div class="admin-card-list" id="allProcessorsList"></div>
       </section>
     </main>
