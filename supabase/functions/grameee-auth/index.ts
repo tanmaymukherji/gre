@@ -1,4 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  buildRateLimitKey,
+  createVerificationMaterial,
+  normalizeVerificationPurpose,
+  normalizeVerificationTarget,
+  verifyVerificationTransaction,
+} from "./verification.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,6 +24,7 @@ const helpGmailClientSecret = Deno.env.get("HELP_GMAIL_CLIENT_SECRET") ?? gmailC
 const helpGmailRefreshToken = Deno.env.get("HELP_GMAIL_REFRESH_TOKEN") ?? gmailRefreshToken;
 const helpGmailSenderEmail = Deno.env.get("HELP_GMAIL_SENDER_EMAIL") ?? "help@greenruraleconomy.in";
 const codeSigningSecret = Deno.env.get("GRAMEEE_AUTH_CODE_SECRET") || serviceRoleKey;
+const otpHmacSecret = Deno.env.get("GRAMEEE_OTP_HMAC_SECRET") ?? "";
 const publicAnonKey = Deno.env.get("GRAMEEE_SUPABASE_ANON_KEY")
   ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpwaGFiZXpxYmJvYWV4bW1oY2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNTY5MTgsImV4cCI6MjA5MTczMjkxOH0.cHZCuzwiAEEQjPo6WAADaD5oBZapFmk45dOe4A4g37U";
 
@@ -127,10 +135,6 @@ function isPasswordStrong(value: string) {
   return value.length >= 8 && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
 }
 
-function makeSixDigitCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
 function toBase64Url(input: string) {
   return btoa(input)
     .replace(/\+/g, "-")
@@ -153,12 +157,6 @@ async function sha256Hex(input: string) {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-}
-
-async function signPayload(payload: Record<string, unknown>) {
-  const encoded = toBase64Url(JSON.stringify(payload));
-  const signature = await sha256Hex(`${encoded}.${codeSigningSecret}`);
-  return `${encoded}.${signature}`;
 }
 
 async function verifySignedPayload(token: string) {
@@ -511,34 +509,145 @@ async function handleCheckUsername(username: string, excludeUserId: string) {
   return jsonResponse({ available: !taken });
 }
 
-async function handleSendEmailCode(email: string, purpose: string) {
-  if (!isValidEmail(email)) {
-    return errorResponse("A valid email address is required.", 400);
+type VerificationTransactionRow = {
+  transaction_id: string;
+  normalized_target: string;
+  purpose: string;
+  otp_hash: string;
+  expires_at: string;
+  attempt_count: number;
+  max_attempts: number;
+  consumed_at: string | null;
+};
+
+const verificationStore = {
+  async get(transactionId: string) {
+    const { data, error } = await supabase
+      .from("grameee_verification_transactions")
+      .select("transaction_id, normalized_target, purpose, otp_hash, expires_at, attempt_count, max_attempts, consumed_at")
+      .eq("transaction_id", transactionId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error("Verification transaction lookup failed.");
+    }
+
+    return data ? data as VerificationTransactionRow : null;
+  },
+  async incrementAttempts(transactionId: string, expectedAttemptCount: number, nowIso: string) {
+    const { data, error } = await supabase
+      .from("grameee_verification_transactions")
+      .update({ attempt_count: expectedAttemptCount + 1 })
+      .eq("transaction_id", transactionId)
+      .eq("attempt_count", expectedAttemptCount)
+      .is("consumed_at", null)
+      .gt("expires_at", nowIso)
+      .select("transaction_id")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error("Verification attempt update failed.");
+    }
+
+    return Boolean(data?.transaction_id);
+  },
+  async consume(transactionId: string, expectedAttemptCount: number, nowIso: string) {
+    const { data, error } = await supabase
+      .from("grameee_verification_transactions")
+      .update({ consumed_at: nowIso })
+      .eq("transaction_id", transactionId)
+      .eq("attempt_count", expectedAttemptCount)
+      .is("consumed_at", null)
+      .gt("expires_at", nowIso)
+      .select("transaction_id")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error("Verification transaction consumption failed.");
+    }
+
+    return Boolean(data?.transaction_id);
+  },
+};
+
+function getOriginKeySource(request: Request) {
+  return requireString(request.headers.get("cf-connecting-ip"))
+    || requireString(request.headers.get("x-forwarded-for")).split(",")[0]?.trim()
+    || requireString(request.headers.get("x-real-ip"))
+    || "unknown";
+}
+
+async function getVerificationRequestMetadata(request: Request) {
+  const userAgent = requireString(request.headers.get("user-agent")).slice(0, 512);
+  return {
+    source: "grameee-auth",
+    edge_region: Deno.env.get("SB_REGION") || null,
+    user_agent_key: userAgent
+      ? await buildRateLimitKey(otpHmacSecret, "user-agent", userAgent)
+      : null,
+  };
+}
+
+const VERIFICATION_FAILURE_MESSAGE = "Verification could not be completed.";
+
+async function handleSendEmailCode(email: string, purpose: string, request: Request) {
+  const normalizedTarget = normalizeVerificationTarget(email);
+  const normalizedPurpose = normalizeVerificationPurpose(purpose);
+
+  if (!otpHmacSecret) {
+    console.error("OTP HMAC secret is not configured; verification remains unavailable.");
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 503);
   }
 
-  const code = makeSixDigitCode();
-  const token = await signPayload({
-    email: normalizeEmail(email),
-    code,
-    purpose,
-    exp: Date.now() + 15 * 60 * 1000,
-  });
+  if (!isValidEmail(normalizedTarget) || !normalizedPurpose) {
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 400);
+  }
 
-  await sendMail(
-    normalizeEmail(email),
-    purpose === "forgot-password" ? "GramEEE password reset code" : "GramEEE email verification code",
-    [
-      purpose === "forgot-password"
-        ? "Use this verification code to reset your GramEEE account password."
-        : "Use this verification code to verify your GramEEE account email address.",
-      "",
-      `Verification code: ${code}`,
-      "",
-      "This code will expire in 15 minutes.",
-    ],
-  );
+  try {
+    const material = await createVerificationMaterial({
+      secret: otpHmacSecret,
+      target: normalizedTarget,
+      purpose: normalizedPurpose,
+      originKeySource: getOriginKeySource(request),
+    });
+    const { error: insertError } = await supabase
+      .from("grameee_verification_transactions")
+      .insert({
+        ...material.row,
+        request_metadata: await getVerificationRequestMetadata(request),
+      });
 
-  return jsonResponse({ token });
+    if (insertError) {
+      throw new Error("Verification transaction could not be stored.");
+    }
+
+    try {
+      await sendMail(
+        normalizedTarget,
+        normalizedPurpose === "forgot-password" ? "GramEEE password reset code" : "GramEEE email verification code",
+        [
+          normalizedPurpose === "forgot-password"
+            ? "Use this verification code to reset your GramEEE account password."
+            : "Use this verification code to verify your GramEEE account email address.",
+          "",
+          `Verification code: ${material.otp}`,
+          "",
+          "This code will expire in 10 minutes.",
+        ],
+      );
+    } catch (mailError) {
+      await supabase
+        .from("grameee_verification_transactions")
+        .delete()
+        .eq("transaction_id", material.row.transaction_id);
+      throw mailError;
+    }
+
+    return jsonResponse(material.clientResponse);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Verification request failed.");
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 500);
+  }
 }
 
 async function handleResolveUsername(loginId: string) {
@@ -558,31 +667,40 @@ async function handleResolveUsername(loginId: string) {
   });
 }
 
-async function handleVerifyEmailCode(email: string, verificationToken: string, verificationCode: string, purpose: string) {
-  if (!email || !verificationToken || !verificationCode) {
-    return errorResponse("Email, verification token, and verification code are required.", 400);
+async function handleVerifyEmailCode(
+  email: string,
+  transactionId: string,
+  verificationCode: string,
+  purpose: string,
+) {
+  if (!otpHmacSecret) {
+    console.error("OTP HMAC secret is not configured; verification remains unavailable.");
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 503);
   }
 
-  const payload = await verifySignedPayload(verificationToken);
+  try {
+    const verified = await verifyVerificationTransaction(
+      {
+        transactionId,
+        target: email,
+        purpose,
+        otp: verificationCode,
+      },
+      {
+        secret: otpHmacSecret,
+        store: verificationStore,
+      },
+    );
 
-  if ((purpose || "register") !== String(payload.purpose || "")) {
-    return errorResponse("Verification purpose does not match.", 400);
+    if (!verified) {
+      return errorResponse(VERIFICATION_FAILURE_MESSAGE, 400);
+    }
+
+    return jsonResponse({ ok: true, verified: true, transactionId });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Verification request failed.");
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 500);
   }
-
-  if (normalizeEmail(String(payload.email || "")) !== normalizeEmail(email)) {
-    return errorResponse("Verification email does not match.", 400);
-  }
-
-  if (String(payload.code || "") !== verificationCode) {
-    return errorResponse("Verification code is incorrect.", 400);
-  }
-
-  return jsonResponse({
-    ok: true,
-    verified: true,
-    email: normalizeEmail(email),
-    purpose: String(payload.purpose || purpose || "register"),
-  });
 }
 
 async function handleRegisterUser(
@@ -706,14 +824,14 @@ async function handleRegisterUser(
   });
 }
 
-async function handleForgotPasswordStart(loginId: string) {
+async function handleForgotPasswordStart(loginId: string, request: Request) {
   const user = await findUserByLoginId(loginId);
 
   if (!user) {
     return errorResponse("No account was found for that login ID.", 404);
   }
 
-  return await handleSendEmailCode(String(user.email || ""), "forgot-password");
+  return await handleSendEmailCode(String(user.email || ""), "forgot-password", request);
 }
 
 async function handleForgotPasswordComplete(
@@ -1199,6 +1317,7 @@ Deno.serve(async (request) => {
   const loginId = requireString(body.loginId);
   const userId = requireString(body.userId);
   const purpose = requireString(body.purpose);
+  const transactionId = requireString(body.transactionId);
   const verificationToken = requireString(body.verificationToken);
   const verificationCode = requireString(body.verificationCode);
   const currentPassword = requireString(body.currentPassword);
@@ -1217,13 +1336,13 @@ Deno.serve(async (request) => {
       case "checkUsername":
         return await handleCheckUsername(username, excludeUserId);
       case "sendEmailCode":
-        return await handleSendEmailCode(email, purpose || "register");
+        return await handleSendEmailCode(email, purpose || "register", request);
       case "resolveUsername":
         return await handleResolveUsername(loginId || username || email);
       case "adminBridgeSync":
         return await handleAdminBridgeSync(password);
       case "verifyEmailCode":
-        return await handleVerifyEmailCode(email, verificationToken, verificationCode, purpose || "register");
+        return await handleVerifyEmailCode(email, transactionId, verificationCode, purpose || "register");
       case "registerUser":
         return await handleRegisterUser(
           fullName,
@@ -1237,7 +1356,7 @@ Deno.serve(async (request) => {
           verificationCode,
         );
       case "forgotPasswordStart":
-        return await handleForgotPasswordStart(loginId || username || email);
+        return await handleForgotPasswordStart(loginId || username || email, request);
       case "forgotPasswordComplete":
         return await handleForgotPasswordComplete(loginId || username || email, newPassword, verificationToken, verificationCode);
       case "changePassword":
