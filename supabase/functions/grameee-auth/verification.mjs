@@ -140,6 +140,23 @@ export async function buildRateLimitKey(
   );
 }
 
+export async function buildRecoveryDecoyTarget(
+  secret,
+  loginId,
+  cryptoProvider = globalThis.crypto,
+) {
+  const normalizedLoginId = typeof loginId === "string"
+    ? loginId.trim().toLowerCase()
+    : "";
+  const decoyKey = await buildRateLimitKey(
+    secret,
+    "recovery-decoy",
+    normalizedLoginId || "missing",
+    cryptoProvider,
+  );
+  return `recovery-${decoyKey.slice(0, 32)}@invalid.local`;
+}
+
 export function constantTimeEqualHex(left, right) {
   const a = typeof left === "string" ? left.toLowerCase() : "";
   const b = typeof right === "string" ? right.toLowerCase() : "";
@@ -254,6 +271,26 @@ export async function verifyVerificationTransaction(
   return await store.consume(
     transaction.transaction_id,
     transaction.attempt_count,
+    new Date(now).toISOString(),
+  );
+}
+
+export async function claimConsumedVerification(
+  { transactionId, target, purpose },
+  { store, now = Date.now() },
+) {
+  const normalizedTransactionId = typeof transactionId === "string" ? transactionId.trim() : "";
+  const normalizedTarget = normalizeVerificationTarget(target);
+  const normalizedPurpose = normalizeVerificationPurpose(purpose);
+
+  if (!UUID_PATTERN.test(normalizedTransactionId) || !normalizedTarget || !normalizedPurpose) {
+    return false;
+  }
+
+  return await store.claim(
+    normalizedTransactionId,
+    normalizedTarget,
+    normalizedPurpose,
     new Date(now).toISOString(),
   );
 }

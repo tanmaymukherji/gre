@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildOtpHash,
+  buildRecoveryDecoyTarget,
+  claimConsumedVerification,
   constantTimeEqualHex,
   createVerificationMaterial,
   generateSixDigitOtp,
@@ -38,6 +40,15 @@ function createStore(rows) {
       row.consumed_at = nowIso;
       return true;
     },
+    async claim(transactionId, target, purpose, nowIso) {
+      const row = state.get(transactionId);
+      if (!row || !row.consumed_at || Date.parse(row.expires_at) <= Date.parse(nowIso)
+        || row.normalized_target !== target || row.purpose !== purpose) {
+        return false;
+      }
+      state.delete(transactionId);
+      return true;
+    },
   };
 }
 
@@ -63,6 +74,15 @@ test("client response contains only an opaque transaction ID", async () => {
   assert.equal(serialized.includes(material.row.otp_hash), false);
   assert.equal(material.row.normalized_target, "person@example.com");
   assert.match(material.row.otp_hash, /^[0-9a-f]{64}$/);
+});
+
+test("recovery decoy targets are deterministic and do not expose identifiers", async () => {
+  const first = await buildRecoveryDecoyTarget(TEST_SECRET, " MissingUser ");
+  const second = await buildRecoveryDecoyTarget(TEST_SECRET, "missinguser");
+
+  assert.equal(first, second);
+  assert.match(first, /^recovery-[0-9a-f]{32}@invalid\.local$/);
+  assert.equal(first.includes("missinguser"), false);
 });
 
 test("hash comparison is exact and purpose/target bound", async () => {
@@ -172,5 +192,34 @@ test("expired and exhausted transactions fail", async () => {
   }, dependencies), false);
   assert.equal(await verifyVerificationTransaction({
     transactionId: exhaustedId, target: "person@example.com", purpose: "register", otp: "123456",
+  }, dependencies), false);
+});
+
+test("consumed verification can be claimed once with the same target and purpose", async () => {
+  const transactionId = "55555555-5555-4555-8555-555555555555";
+  const row = {
+    transaction_id: transactionId,
+    normalized_target: "person@example.com",
+    purpose: "register",
+    otp_hash: "0".repeat(64),
+    expires_at: new Date(NOW + 600_000).toISOString(),
+    attempt_count: 0,
+    max_attempts: 5,
+    consumed_at: new Date(NOW).toISOString(),
+  };
+  const store = createStore([row]);
+  const dependencies = { store, now: NOW + 1 };
+
+  assert.equal(await claimConsumedVerification({
+    transactionId, target: "person@example.com", purpose: "forgot-password",
+  }, dependencies), false);
+  assert.equal(await claimConsumedVerification({
+    transactionId, target: "other@example.com", purpose: "register",
+  }, dependencies), false);
+  assert.equal(await claimConsumedVerification({
+    transactionId, target: "person@example.com", purpose: "register",
+  }, dependencies), true);
+  assert.equal(await claimConsumedVerification({
+    transactionId, target: "person@example.com", purpose: "register",
   }, dependencies), false);
 });

@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   buildRateLimitKey,
+  buildRecoveryDecoyTarget,
+  claimConsumedVerification,
   createVerificationMaterial,
   normalizeVerificationPurpose,
   normalizeVerificationTarget,
@@ -23,7 +25,6 @@ const helpGmailClientId = Deno.env.get("HELP_GMAIL_CLIENT_ID") ?? gmailClientId;
 const helpGmailClientSecret = Deno.env.get("HELP_GMAIL_CLIENT_SECRET") ?? gmailClientSecret;
 const helpGmailRefreshToken = Deno.env.get("HELP_GMAIL_REFRESH_TOKEN") ?? gmailRefreshToken;
 const helpGmailSenderEmail = Deno.env.get("HELP_GMAIL_SENDER_EMAIL") ?? "help@greenruraleconomy.in";
-const codeSigningSecret = Deno.env.get("GRAMEEE_AUTH_CODE_SECRET") || serviceRoleKey;
 const otpHmacSecret = Deno.env.get("GRAMEEE_OTP_HMAC_SECRET") ?? "";
 const publicAnonKey = Deno.env.get("GRAMEEE_SUPABASE_ANON_KEY")
   ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpwaGFiZXpxYmJvYWV4bW1oY2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNTY5MTgsImV4cCI6MjA5MTczMjkxOH0.cHZCuzwiAEEQjPo6WAADaD5oBZapFmk45dOe4A4g37U";
@@ -140,45 +141,6 @@ function toBase64Url(input: string) {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
-}
-
-function fromBase64Url(input: string) {
-  const normalized = input
-    .replace(/-/g, "+")
-    .replace(/_/g, "/")
-    .padEnd(Math.ceil(input.length / 4) * 4, "=");
-
-  return atob(normalized);
-}
-
-async function sha256Hex(input: string) {
-  const bytes = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function verifySignedPayload(token: string) {
-  const [encoded, signature] = token.split(".");
-
-  if (!encoded || !signature) {
-    throw new Error("Verification token is invalid.");
-  }
-
-  const expectedSignature = await sha256Hex(`${encoded}.${codeSigningSecret}`);
-
-  if (expectedSignature !== signature) {
-    throw new Error("Verification token is invalid.");
-  }
-
-  const payload = JSON.parse(fromBase64Url(encoded));
-
-  if (!payload?.exp || Number(payload.exp) < Date.now()) {
-    throw new Error("Verification token has expired.");
-  }
-
-  return payload as Record<string, unknown>;
 }
 
 type GmailCredentialSet = {
@@ -568,6 +530,24 @@ const verificationStore = {
 
     return Boolean(data?.transaction_id);
   },
+  async claim(transactionId: string, target: string, purpose: string, nowIso: string) {
+    const { data, error } = await supabase
+      .from("grameee_verification_transactions")
+      .delete()
+      .eq("transaction_id", transactionId)
+      .eq("normalized_target", target)
+      .eq("purpose", purpose)
+      .not("consumed_at", "is", null)
+      .gt("expires_at", nowIso)
+      .select("transaction_id")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error("Verification transaction claim failed.");
+    }
+
+    return Boolean(data?.transaction_id);
+  },
 };
 
 function getOriginKeySource(request: Request) {
@@ -589,8 +569,14 @@ async function getVerificationRequestMetadata(request: Request) {
 }
 
 const VERIFICATION_FAILURE_MESSAGE = "Verification could not be completed.";
+const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
 
-async function handleSendEmailCode(email: string, purpose: string, request: Request) {
+async function handleSendEmailCode(
+  email: string,
+  purpose: string,
+  request: Request,
+  shouldSendEmail = true,
+) {
   const normalizedTarget = normalizeVerificationTarget(email);
   const normalizedPurpose = normalizeVerificationPurpose(purpose);
 
@@ -610,6 +596,26 @@ async function handleSendEmailCode(email: string, purpose: string, request: Requ
       purpose: normalizedPurpose,
       originKeySource: getOriginKeySource(request),
     });
+    const cooldownStartedAt = new Date(Date.now() - VERIFICATION_RESEND_COOLDOWN_MS).toISOString();
+    const { data: recentTransaction, error: cooldownError } = await supabase
+      .from("grameee_verification_transactions")
+      .select("transaction_id")
+      .eq("target_rate_limit_key", material.row.target_rate_limit_key)
+      .eq("purpose", normalizedPurpose)
+      .is("consumed_at", null)
+      .gte("created_at", cooldownStartedAt)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (cooldownError) {
+      throw new Error("Verification cooldown lookup failed.");
+    }
+
+    if (recentTransaction?.transaction_id) {
+      return jsonResponse({ transactionId: String(recentTransaction.transaction_id) });
+    }
+
     const { error: insertError } = await supabase
       .from("grameee_verification_transactions")
       .insert({
@@ -622,6 +628,10 @@ async function handleSendEmailCode(email: string, purpose: string, request: Requ
     }
 
     try {
+      if (!shouldSendEmail) {
+        return jsonResponse(material.clientResponse);
+      }
+
       await sendMail(
         normalizedTarget,
         normalizedPurpose === "forgot-password" ? "GramEEE password reset code" : "GramEEE email verification code",
@@ -711,8 +721,7 @@ async function handleRegisterUser(
   phone: string,
   username: string,
   password: string,
-  verificationToken: string,
-  verificationCode: string,
+  transactionId: string,
 ) {
   if (!fullName || !organization || !email || !username || !password) {
     return errorResponse("Full name, organisation, email, username, and password are required.", 400);
@@ -726,24 +735,27 @@ async function handleRegisterUser(
     return errorResponse("Password must be at least 8 characters with 1 number and 1 special character.", 400);
   }
 
-  const payload = await verifySignedPayload(verificationToken);
+  const verificationClaimed = await claimConsumedVerification(
+    {
+      transactionId,
+      target: email,
+      purpose: "register",
+    },
+    { store: verificationStore },
+  );
 
-  if (payload.purpose !== "register" || normalizeEmail(String(payload.email || "")) !== normalizeEmail(email)) {
-    return errorResponse("Email verification does not match this account request.", 400);
-  }
-
-  if (String(payload.code || "") !== verificationCode) {
-    return errorResponse("Verification code is incorrect.", 400);
+  if (!verificationClaimed) {
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 400);
   }
 
   if (await isUsernameTaken(username)) {
-    return errorResponse("That username is already in use.", 409);
+    return errorResponse("Account could not be created.", 409);
   }
 
   const existingEmailUser = await findUserByEmail(email);
 
   if (existingEmailUser && !isIncompleteUserRecord(existingEmailUser)) {
-    return errorResponse("That email address already has an account.", 409);
+    return errorResponse("Account could not be created.", 409);
   }
 
   if (existingEmailUser && isIncompleteUserRecord(existingEmailUser)) {
@@ -763,7 +775,7 @@ async function handleRegisterUser(
     });
 
     if (error) {
-      return errorResponse(error.message || "Existing account could not be completed.", 500);
+      return errorResponse("Account could not be created.", 500);
     }
 
     const refreshed = await supabase.auth.admin.getUserById(String(existingEmailUser.id));
@@ -807,7 +819,7 @@ async function handleRegisterUser(
   });
 
   if (error || !data.user) {
-    return errorResponse(error?.message || "Account could not be created.", 500);
+    return errorResponse("Account could not be created.", 500);
   }
 
   const refreshed = await supabase.auth.admin.getUserById(data.user.id);
@@ -825,19 +837,34 @@ async function handleRegisterUser(
 }
 
 async function handleForgotPasswordStart(loginId: string, request: Request) {
+  const startedAt = Date.now();
   const user = await findUserByLoginId(loginId);
+  const userEmail = normalizeEmail(String(user?.email || ""));
+  const hasDeliverableAccount = Boolean(user && isValidEmail(userEmail));
+  const target = hasDeliverableAccount
+    ? userEmail
+    : await buildRecoveryDecoyTarget(otpHmacSecret, loginId);
 
-  if (!user) {
-    return errorResponse("No account was found for that login ID.", 404);
+  const response = await handleSendEmailCode(
+    target,
+    "forgot-password",
+    request,
+    hasDeliverableAccount,
+  );
+  const minimumResponseTimeMs = 1200;
+  const remainingDelayMs = minimumResponseTimeMs - (Date.now() - startedAt);
+
+  if (remainingDelayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remainingDelayMs));
   }
 
-  return await handleSendEmailCode(String(user.email || ""), "forgot-password", request);
+  return response;
 }
 
 async function handleForgotPasswordComplete(
   loginId: string,
   newPassword: string,
-  verificationToken: string,
+  transactionId: string,
   verificationCode: string,
 ) {
   if (!isPasswordStrong(newPassword)) {
@@ -845,28 +872,53 @@ async function handleForgotPasswordComplete(
   }
 
   const user = await findUserByLoginId(loginId);
+  const userEmail = normalizeEmail(String(user?.email || ""));
+  const hasDeliverableAccount = Boolean(user && isValidEmail(userEmail));
+  const target = hasDeliverableAccount
+    ? userEmail
+    : await buildRecoveryDecoyTarget(otpHmacSecret, loginId);
 
-  if (!user) {
-    return errorResponse("No account was found for that login ID.", 404);
-  }
+  try {
+    const verified = await verifyVerificationTransaction(
+      {
+        transactionId,
+        target,
+        purpose: "forgot-password",
+        otp: verificationCode,
+      },
+      {
+        secret: otpHmacSecret,
+        store: verificationStore,
+      },
+    );
 
-  const payload = await verifySignedPayload(verificationToken);
-  const userEmail = normalizeEmail(String(user.email || ""));
+    if (!verified || !hasDeliverableAccount || !user) {
+      return errorResponse(VERIFICATION_FAILURE_MESSAGE, 400);
+    }
 
-  if (payload.purpose !== "forgot-password" || normalizeEmail(String(payload.email || "")) !== userEmail) {
-    return errorResponse("Password reset verification does not match this account.", 400);
-  }
+    const verificationClaimed = await claimConsumedVerification(
+      {
+        transactionId,
+        target,
+        purpose: "forgot-password",
+      },
+      { store: verificationStore },
+    );
 
-  if (String(payload.code || "") !== verificationCode) {
-    return errorResponse("Verification code is incorrect.", 400);
-  }
+    if (!verificationClaimed) {
+      return errorResponse(VERIFICATION_FAILURE_MESSAGE, 400);
+    }
 
-  const { error } = await supabase.auth.admin.updateUserById(String(user.id), {
-    password: newPassword,
-  });
+    const { error } = await supabase.auth.admin.updateUserById(String(user.id), {
+      password: newPassword,
+    });
 
-  if (error) {
-    return errorResponse(error.message || "Password could not be updated.", 500);
+    if (error) {
+      return errorResponse("Password could not be updated.", 500);
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Password recovery failed.");
+    return errorResponse(VERIFICATION_FAILURE_MESSAGE, 500);
   }
 
   return jsonResponse({ ok: true });
@@ -1293,7 +1345,7 @@ Deno.serve(async (request) => {
     return errorResponse("Method not allowed.", 405);
   }
 
-  if (!supabaseUrl || !serviceRoleKey || !codeSigningSecret) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return errorResponse("Function secrets are not configured.", 500);
   }
 
@@ -1318,7 +1370,6 @@ Deno.serve(async (request) => {
   const userId = requireString(body.userId);
   const purpose = requireString(body.purpose);
   const transactionId = requireString(body.transactionId);
-  const verificationToken = requireString(body.verificationToken);
   const verificationCode = requireString(body.verificationCode);
   const currentPassword = requireString(body.currentPassword);
   const newPassword = requireString(body.newPassword);
@@ -1352,13 +1403,12 @@ Deno.serve(async (request) => {
           phone,
           username,
           password,
-          verificationToken,
-          verificationCode,
+          transactionId,
         );
       case "forgotPasswordStart":
         return await handleForgotPasswordStart(loginId || username || email, request);
       case "forgotPasswordComplete":
-        return await handleForgotPasswordComplete(loginId || username || email, newPassword, verificationToken, verificationCode);
+        return await handleForgotPasswordComplete(loginId || username || email, newPassword, transactionId, verificationCode);
       case "changePassword":
         return await handleUserChangePassword(loginId || username || email, currentPassword, newPassword);
       case "getProfile":
