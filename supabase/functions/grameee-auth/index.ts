@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { completePasswordResetSecurity } from "./recovery-security.mjs";
 import {
   buildRateLimitKey,
   buildRecoveryDecoyTarget,
@@ -866,6 +867,7 @@ async function handleForgotPasswordComplete(
   newPassword: string,
   transactionId: string,
   verificationCode: string,
+  request: Request,
 ) {
   if (!isPasswordStrong(newPassword)) {
     return errorResponse("Password must be at least 8 characters with 1 number and 1 special character.", 400);
@@ -909,13 +911,44 @@ async function handleForgotPasswordComplete(
       return errorResponse(VERIFICATION_FAILURE_MESSAGE, 400);
     }
 
-    const { error } = await supabase.auth.admin.updateUserById(String(user.id), {
-      password: newPassword,
-    });
-
-    if (error) {
-      return errorResponse("Password could not be updated.", 500);
-    }
+    await completePasswordResetSecurity(
+      {
+        userId: String(user.id),
+        userEmail,
+        newPassword,
+        requestMetadata: await getVerificationRequestMetadata(request),
+      },
+      {
+        revokeSessions: async (userId: string) => {
+          const { data, error } = await supabase.rpc("grameee_revoke_user_sessions", {
+            p_user_id: userId,
+          });
+          if (error) {
+            throw new Error("Existing sessions could not be revoked.");
+          }
+          const revokedCount = Number(data);
+          return Number.isSafeInteger(revokedCount) && revokedCount >= 0 ? revokedCount : 0;
+        },
+        updatePassword: async (userId: string, password: string) => {
+          const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+          if (error) {
+            throw new Error("Password could not be updated.");
+          }
+        },
+        sendNotification: async (email: string, bodyLines: string[]) => {
+          await sendMail(email, "Your GramEEE password was reset", bodyLines);
+        },
+        writeAudit: async (event: Record<string, unknown>) => {
+          const { error } = await supabase
+            .from("grameee_security_audit_events")
+            .insert(event);
+          if (error) {
+            throw new Error("Password-reset audit event could not be recorded.");
+          }
+        },
+        onOperationalError: (message: string) => console.error(message),
+      },
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Password recovery failed.");
     return errorResponse(VERIFICATION_FAILURE_MESSAGE, 500);
@@ -1408,7 +1441,13 @@ Deno.serve(async (request) => {
       case "forgotPasswordStart":
         return await handleForgotPasswordStart(loginId || username || email, request);
       case "forgotPasswordComplete":
-        return await handleForgotPasswordComplete(loginId || username || email, newPassword, transactionId, verificationCode);
+        return await handleForgotPasswordComplete(
+          loginId || username || email,
+          newPassword,
+          transactionId,
+          verificationCode,
+          request,
+        );
       case "changePassword":
         return await handleUserChangePassword(loginId || username || email, currentPassword, newPassword);
       case "getProfile":
