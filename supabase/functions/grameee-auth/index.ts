@@ -57,6 +57,8 @@ const privilegeDefaults = {
 
 const roleLabels = ["admin", "moderator", "curator", "user"] as const;
 type GrameeeRole = typeof roleLabels[number];
+const organisationRoleLabels = ["org_admin", "org_editor", "org_viewer"] as const;
+type OrganisationRole = typeof organisationRoleLabels[number];
 
 const AUTH_VERIFICATION_FLAG = "insecure_auth_verification_enabled";
 const AUTH_VERIFICATION_MAINTENANCE_MESSAGE =
@@ -114,6 +116,10 @@ function normalizeEmail(value: string) {
 
 function normalizeUsername(value: string) {
   return value.trim().toLowerCase();
+}
+
+function normalizeOrganisationName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function getUserMetadata(user: Record<string, unknown>) {
@@ -1229,12 +1235,135 @@ async function handleAdminBridgeSync(password: string) {
 async function handleAdminListUsers(authHeader: string) {
   await verifyAdminAuthUser(authHeader);
   const users = await listAuthUsers();
+  const { data: membershipRows, error: membershipsError } = await supabase
+    .from("gre_mis_organisation_memberships")
+    .select("id,organisation_id,user_email,role,status,organisation:gre_mis_organisations(id,name,normalized_name)");
+  if (membershipsError) {
+    return errorResponse("Organisation roles could not be loaded.", 500);
+  }
+
   const visibleUsers = users
     .filter((user) => !isRemovedUser(user as Record<string, unknown>))
-    .map((user) => buildUserSummary(user as Record<string, unknown>))
+    .map((user) => {
+      const summary = buildUserSummary(user as Record<string, unknown>);
+      const normalizedEmail = normalizeEmail(summary.email);
+      const normalizedOrganisation = normalizeOrganisationName(summary.organization);
+      const userMemberships = (membershipRows || []).filter((row) => normalizeEmail(requireString(row.user_email)) === normalizedEmail);
+      const primaryMembership = userMemberships.find((row) => {
+        const organisation = Array.isArray(row.organisation) ? row.organisation[0] : row.organisation;
+        const organisationRecord = (organisation && typeof organisation === "object" ? organisation : {}) as Record<string, unknown>;
+        return normalizeOrganisationName(requireString(organisationRecord.normalized_name || organisationRecord.name)) === normalizedOrganisation;
+      });
+      return {
+        ...summary,
+        organisationRole: requireString(primaryMembership?.role),
+        organisationRoleStatus: requireString(primaryMembership?.status),
+        organisationMembershipId: requireString(primaryMembership?.id),
+      };
+    })
     .sort((a, b) => a.username.localeCompare(b.username));
 
   return jsonResponse({ items: visibleUsers });
+}
+
+async function updateUserOrganisationRole(input: {
+  userId: string;
+  previousEmail: string;
+  email: string;
+  organisation: string;
+  organisationRole: string;
+  adminUserId: string;
+}) {
+  const requestedRole = requireString(input.organisationRole).toLowerCase();
+  if (requestedRole && !(organisationRoleLabels as readonly string[]).includes(requestedRole)) {
+    throw new Error("Invalid organisation role.");
+  }
+
+  const normalizedOrganisation = normalizeOrganisationName(input.organisation);
+  if (!normalizedOrganisation) {
+    if (requestedRole) throw new Error("Organisation is required before assigning an organisation role.");
+    return;
+  }
+
+  let { data: organisation, error: organisationError } = await supabase
+    .from("gre_mis_organisations")
+    .select("id,name,normalized_name")
+    .eq("normalized_name", normalizedOrganisation)
+    .maybeSingle();
+  if (organisationError) throw new Error(organisationError.message);
+
+  if (!organisation && requestedRole) {
+    const created = await supabase
+      .from("gre_mis_organisations")
+      .insert({
+        name: input.organisation.trim(),
+        normalized_name: normalizedOrganisation,
+        source: "grameee_admin",
+      })
+      .select("id,name,normalized_name")
+      .single();
+    if (created.error || !created.data) throw new Error(created.error?.message || "Organisation could not be created.");
+    organisation = created.data;
+  }
+
+  if (!organisation?.id) return;
+
+  const normalizedEmail = normalizeEmail(input.email);
+  const previousEmail = normalizeEmail(input.previousEmail);
+  let { data: existing, error: existingError } = await supabase
+    .from("gre_mis_organisation_memberships")
+    .select("id,role,status,user_email,user_id")
+    .eq("organisation_id", organisation.id)
+    .eq("user_email", normalizedEmail)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+
+  if (!existing && previousEmail && previousEmail !== normalizedEmail) {
+    const previousMembership = await supabase
+      .from("gre_mis_organisation_memberships")
+      .select("id,role,status,user_email,user_id")
+      .eq("organisation_id", organisation.id)
+      .eq("user_email", previousEmail)
+      .maybeSingle();
+    if (previousMembership.error) throw new Error(previousMembership.error.message);
+    existing = previousMembership.data;
+  }
+
+  const isDowngradingLastAdmin = existing?.role === "org_admin" && existing?.status === "approved" && requestedRole !== "org_admin";
+  if (isDowngradingLastAdmin) {
+    const { count, error } = await supabase
+      .from("gre_mis_organisation_memberships")
+      .select("id", { count: "exact", head: true })
+      .eq("organisation_id", organisation.id)
+      .eq("role", "org_admin")
+      .eq("status", "approved");
+    if (error) throw new Error(error.message);
+    if ((count || 0) <= 1) throw new Error("At least one approved organisation admin is required.");
+  }
+
+  if (!requestedRole) {
+    if (!existing?.id) return;
+    const { error } = await supabase
+      .from("gre_mis_organisation_memberships")
+      .update({ status: "revoked", approved_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const membershipRow = {
+    organisation_id: organisation.id,
+    user_email: normalizedEmail,
+    role: requestedRole as OrganisationRole,
+    status: "approved",
+    approved_at: new Date().toISOString(),
+    notes: `Assigned by GramEEE admin ${input.adminUserId}.`,
+  };
+
+  const membershipResult = existing?.id
+    ? await supabase.from("gre_mis_organisation_memberships").update(membershipRow).eq("id", existing.id)
+    : await supabase.from("gre_mis_organisation_memberships").insert(membershipRow);
+  if (membershipResult.error) throw new Error(membershipResult.error.message);
 }
 
 async function handleAdminUpdateUser(
@@ -1247,6 +1376,7 @@ async function handleAdminUpdateUser(
   phone: string,
   username: string,
   role: string,
+  organisationRole: string,
 ) {
   const adminUser = await verifyAdminAuthUser(authHeader);
 
@@ -1303,6 +1433,22 @@ async function handleAdminUpdateUser(
 
   if (error) {
     return errorResponse(error.message || "User details could not be updated.", 500);
+  }
+
+  try {
+    await updateUserOrganisationRole({
+      userId,
+      previousEmail: requireString(target.email),
+      email,
+      organisation: organization,
+      organisationRole,
+      adminUserId: String(adminUser.id),
+    });
+  } catch (organisationRoleError) {
+    return errorResponse(
+      organisationRoleError instanceof Error ? organisationRoleError.message : "Organisation role could not be updated.",
+      500,
+    );
   }
 
   const refreshed = await supabase.auth.admin.getUserById(userId);
@@ -1398,6 +1544,7 @@ Deno.serve(async (request) => {
   const phone = requireString(body.phone);
   const username = requireString(body.username);
   const role = requireString(body.role);
+  const organisationRole = requireString(body.organisationRole || body.organizationRole);
   const password = requireString(body.password);
   const loginId = requireString(body.loginId);
   const userId = requireString(body.userId);
@@ -1459,7 +1606,7 @@ Deno.serve(async (request) => {
       case "adminListUsers":
         return await handleAdminListUsers(authHeader);
       case "adminUpdateUser":
-        return await handleAdminUpdateUser(authHeader, userId, fullName, organization, organizationLink, email, phone, username, role);
+        return await handleAdminUpdateUser(authHeader, userId, fullName, organization, organizationLink, email, phone, username, role, organisationRole);
       case "adminDeleteUser":
         return await handleAdminDeleteUser(authHeader, userId);
       default:
