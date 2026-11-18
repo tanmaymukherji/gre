@@ -1,4 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  ToolSubmissionValidationError,
+  validateToolSubmission,
+} from "./tool-submission-validation.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -872,6 +876,46 @@ async function handleListPending(token: string, authHeader: string) {
   return jsonResponse({ items: data ?? [] });
 }
 
+async function handleSubmitTool(body: Record<string, unknown>) {
+  let submission;
+  try {
+    submission = validateToolSubmission(body);
+  } catch (error) {
+    if (error instanceof ToolSubmissionValidationError) {
+      return errorResponse(error.message, 400);
+    }
+    return errorResponse("Tool submission is invalid.", 400);
+  }
+
+  const { data: flag, error: flagError } = await supabase
+    .from("grameee_security_flags")
+    .select("enabled, user_message")
+    .eq("flag_key", "public_tool_submission_enabled")
+    .maybeSingle();
+
+  if (flagError || flag?.enabled !== true) {
+    return errorResponse(
+      requireString(flag?.user_message)
+        || "New tool submissions are temporarily unavailable.",
+      503,
+    );
+  }
+
+  const { error } = await supabase
+    .from("grameee_tools")
+    .insert(submission);
+
+  if (error) {
+    console.error("Validated tool submission could not be saved", {
+      code: error.code,
+      message: error.message,
+    });
+    return errorResponse("The submission could not be saved right now.", 500);
+  }
+
+  return jsonResponse({ ok: true }, 201);
+}
+
 async function handleListAll(token: string, authHeader: string) {
   try {
     await resolveAdminAccess(token, authHeader);
@@ -1488,6 +1532,8 @@ Deno.serve(async (request) => {
   const processingTime = requireString(body.processingTime);
 
   switch (action) {
+    case "submitTool":
+      return await handleSubmitTool(body);
     case "login":
       return await handleLogin(password);
     case "verify":
